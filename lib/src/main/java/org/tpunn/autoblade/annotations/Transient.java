@@ -5,8 +5,9 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/** Identifies the data object that "seeds" a dynamic scope. */
+/**
+ * Indicates that a new instance is created for every injection point.
+ */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.SOURCE)
-public @interface Seed {
-}
+public @interface Transient {}

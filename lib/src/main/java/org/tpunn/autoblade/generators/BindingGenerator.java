@@ -1,81 +1,62 @@
 package org.tpunn.autoblade.generators;
 
 import com.squareup.javapoet.*;
+import org.tpunn.autoblade.annotations.*;
+import org.tpunn.autoblade.utilities.LocationResolver;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.annotation.processing.RoundEnvironment;
 import javax.lang.model.element.*;
-import javax.lang.model.type.TypeMirror;
 import java.io.IOException;
 import java.util.*;
 
 public class BindingGenerator {
     private final ProcessingEnvironment env;
-
     public BindingGenerator(ProcessingEnvironment env) { this.env = env; }
 
     public void generate(RoundEnvironment roundEnv) {
-        Map<String, List<TypeElement>> modules = new HashMap<>();
+        Set<Element> managed = new HashSet<>(roundEnv.getElementsAnnotatedWith(Scoped.class));
+        managed.addAll(roundEnv.getElementsAnnotatedWith(EntryPoint.class));
+        if (managed.isEmpty()) return;
 
-        // Collect all @Service and @Singleton classes
-        Set<Element> managed = new HashSet<>();
-        managed.addAll(roundEnv.getElementsAnnotatedWith(Service.class));
-        managed.addAll(roundEnv.getElementsAnnotatedWith(javax.inject.Singleton.class));
+        Map<String, List<TypeElement>> groups = new HashMap<>();
+        String pkg = env.getElementUtils().getPackageOf(managed.iterator().next()).getQualifiedName().toString();
 
         for (Element e : managed) {
-            TypeElement te = (TypeElement) e;
-            String scopeName = resolveScopeName(te);
-            modules.computeIfAbsent(scopeName, k -> new ArrayList<>()).add(te);
+            if (!(e instanceof TypeElement te)) continue;
+            String loc = LocationResolver.resolveLocation(te);
+            groups.computeIfAbsent(loc == null || loc.isEmpty() ? "App" : loc, k -> new ArrayList<>()).add(te);
         }
+        groups.putIfAbsent("App", new ArrayList<>());
 
-        modules.forEach(this::writeModule);
-    }
+        groups.forEach((loc, svcs) -> {
+            TypeSpec.Builder mod = TypeSpec.classBuilder(loc + "AutoModule")
+                    .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT).addAnnotation(ClassName.get("dagger", "Module"));
 
-    private String resolveScopeName(TypeElement te) {
-        for (AnnotationMirror m : te.getAnnotationMirrors()) {
-            Element annotation = m.getAnnotationType().asElement();
-            if (annotation.getAnnotation(javax.inject.Scope.class) != null) {
-                String name = annotation.getSimpleName().toString();
-                return name.endsWith("Scope") ? name.substring(0, name.length() - 5) : name;
+            for (TypeElement te : svcs) {
+                te.getInterfaces().stream()
+                        .filter(i -> !i.toString().startsWith("java.lang") && !i.toString().startsWith("java.io"))
+                        .findFirst().ifPresent(iface -> {
+                            MethodSpec.Builder bind = MethodSpec.methodBuilder("bind" + te.getSimpleName())
+                                    .addAnnotation(ClassName.get("dagger", "Binds")).addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
+                                    .returns(TypeName.get(iface)).addParameter(TypeName.get(te.asType()), "impl");
+
+                            if ("App".equals(loc)) bind.addAnnotation(ClassName.get("javax.inject", "Singleton"));
+                            else bind.addAnnotation(getGeneratedAnchor(te, pkg));
+
+                            mod.addMethod(bind.build());
+                        });
             }
-        }
-        return "App";
+            try { JavaFile.builder(pkg, mod.build()).build().writeTo(env.getFiler()); } catch (IOException ignored) {}
+        });
     }
 
-    private void writeModule(String prefix, List<TypeElement> elements) {
-        TypeSpec.Builder builder = TypeSpec.classBuilder(prefix + "AutoModule")
-                .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
-                .addAnnotation(ClassName.get("dagger", "Module"));
-
-        for (TypeElement te : elements) {
-            TypeMirror inter = te.getInterfaces().isEmpty() ? te.asType() : te.getInterfaces().get(0);
-            MethodSpec.Builder bind = MethodSpec.methodBuilder("bind" + te.getSimpleName())
-                    .addAnnotation(ClassName.get("dagger", "Binds"))
-                    .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
-                    .returns(TypeName.get(inter))
-                    .addParameter(TypeName.get(te.asType()), "impl");
-
-            // Only apply scope if NOT a @Service (Services are transient)
-            if (te.getAnnotation(Service.class) == null) {
-                applyScope(te, bind);
-            }
-
-            builder.addMethod(bind.build());
-        }
-        
-        writeFile(builder.build());
-    }
-
-    private void applyScope(TypeElement te, MethodSpec.Builder bind) {
-        for (AnnotationMirror m : te.getAnnotationMirrors()) {
-            if (m.getAnnotationType().asElement().getAnnotation(javax.inject.Scope.class) != null) {
-                bind.addAnnotation(AnnotationSpec.get(m));
-            }
-        }
-    }
-
-    private void writeFile(TypeSpec spec) {
-        try {
-            JavaFile.builder("org.tpunn.autoblade", spec).build().writeTo(env.getFiler());
-        } catch (IOException e) { /* Log error */ }
+    private ClassName getGeneratedAnchor(TypeElement te, String pkg) {
+        return te.getAnnotationMirrors().stream().map(m -> m.getAnnotationType().asElement())
+                .filter(e -> e.getAnnotation(Anchor.class) != null).findFirst().map(e -> {
+                    Anchor a = e.getAnnotation(Anchor.class);
+                    String name = e.getSimpleName().toString();
+                    String prefix = !a.value().isEmpty() ? a.value() : (name.endsWith("Anchor") ? name.substring(0, name.lastIndexOf("Anchor")) : name);
+                    return ClassName.get(pkg, "Auto" + prefix + "Anchor");
+                }).orElse(ClassName.get("javax.inject", "Singleton"));
     }
 }
