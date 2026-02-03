@@ -24,7 +24,6 @@ public class Validator {
         for (Element e : allManaged) {
             if (!(e instanceof TypeElement te)) continue;
 
-            String loc = LocationResolver.resolveLocation(te);
             boolean hasAnchor = hasAnchorMetaAnnotation(te);
             boolean isImplementation = te.getAnnotation(Scoped.class) != null || te.getAnnotation(EntryPoint.class) != null;
 
@@ -37,13 +36,13 @@ public class Validator {
             // Rule 2: Validation of seeds
             if (te.getAnnotation(Seed.class) != null && !hasAnchor) {
                 env.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                        "AutoBlade: Seed '" + te.getSimpleName() + "' must be annotated with an @Anchor to define its scope.", te);
+                        "AutoBlade: Seed '" + te.getSimpleName() + "' must be annotated with an @Anchored to define its scope.", te);
             }
         }
     }
 
     private boolean hasAnchorMetaAnnotation(TypeElement te) {
-        return te.getAnnotationMirrors().stream()
-                .anyMatch(m -> m.getAnnotationType().asElement().getAnnotation(Anchor.class) != null);
+        // Older meta-annotation approach removed; presence of an anchor is determined by LocationResolver
+        return !LocationResolver.resolveLocation(te).equals("App");
     }
 }

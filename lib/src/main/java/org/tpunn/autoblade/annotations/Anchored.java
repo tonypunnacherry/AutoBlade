@@ -5,10 +5,9 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/** Identifies the data object that "seeds" a dynamic scope. */
+/** Anchors a service to a specific seeded subcomponent. */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.SOURCE)
-public @interface Seed {
-    /** The name of the seed object. */
+public @interface Anchored {
     String value();
 }

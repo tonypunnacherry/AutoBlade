@@ -5,10 +5,12 @@ import org.junit.Test;
 public class BasicTest {
     @Test
     public void test() {
-        AppComponent component = DaggerAppComponent.create();
+        AppBlade appBlade = DaggerAppBlade.create();
 
-        UserComponent user1 = component.getUserBuilder().seed(new User("001", "tpunn")).build();
-
-        user1.getUserDashboard().display();
+        UserBlade userBlade = appBlade.getUserBuilder()
+            .seed(new User("jdoe", "John Doe"))
+            .build();
+            
+        userBlade.getUserDashboard().display();
     }
 }

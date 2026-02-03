@@ -1,11 +1,12 @@
 package org.tpunn.autoblade;
 
+import org.tpunn.autoblade.annotations.Anchored;
 import org.tpunn.autoblade.annotations.Scoped;
 
 import javax.inject.Inject;
 
 @Scoped
-@MemberAnchor
+@Anchored("User")
 public class UserProfileService implements UserProfile {
     private final User data;
 

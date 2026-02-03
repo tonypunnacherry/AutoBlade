@@ -1,11 +1,12 @@
 package org.tpunn.autoblade;
 
+import org.tpunn.autoblade.annotations.Anchored;
 import org.tpunn.autoblade.annotations.EntryPoint;
 
 import javax.inject.Inject;
 
 @EntryPoint
-@MemberAnchor
+@Anchored("User")
 public class UserDashboardImpl implements UserDashboard {
     private final UserProfile userProfile;
     private final User userData;
