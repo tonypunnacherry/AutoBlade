@@ -18,6 +18,7 @@ public final class InterfaceSelector {
         List<TypeMirror> ifaces = new ArrayList<>();
         String implType = impl.asType().toString();
         for (TypeMirror m : impl.getInterfaces()) {
+            if (m == null) continue;
             String s = m.toString();
             // Skip common JDK interfaces and defensive: don't consider the implementation type itself
             if (s.startsWith("java.lang") || s.startsWith("java.io") || s.equals(implType)) continue;
@@ -63,6 +64,7 @@ public final class InterfaceSelector {
             TypeElement mElem = (TypeElement) ((javax.lang.model.type.DeclaredType) m).asElement();
             int count = 0;
             for (Element e : mElem.getEnclosedElements()) {
+                if (e == null) continue;
                 if (e.getKind() == ElementKind.METHOD) count++;
             }
             if (count < bestCount) {

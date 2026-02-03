@@ -11,7 +11,7 @@ public class ProvisionMethod {
         String name;
         if (!te.getInterfaces().isEmpty()) {
             TypeMirror businessInterface = te.getInterfaces().stream()
-                    .filter(i -> !i.toString().startsWith("java.lang") && !i.toString().startsWith("java.io"))
+                    .filter(i -> i != null && !i.toString().startsWith("java.lang") && !i.toString().startsWith("java.io"))
                     .map(i -> (TypeMirror) i).findFirst().orElse(te.getInterfaces().get(0));
             returnType = TypeName.get(businessInterface);
             String full = businessInterface.toString();
