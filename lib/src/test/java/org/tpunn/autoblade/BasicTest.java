@@ -2,6 +2,8 @@ package org.tpunn.autoblade;
 
 import static org.junit.Assert.assertEquals;
 
+import java.util.UUID;
+
 import org.junit.Test;
 
 public class BasicTest {
@@ -11,7 +13,8 @@ public class BasicTest {
 
         app.teams().create(new TeamData("team1", "Cool Team"));
         TeamBlade team = app.teams().get("team1");
-        PlayerBlade player = team.players().create(new PlayerData("player1", "Tony"));
+        UUID id = UUID.randomUUID();
+        PlayerBlade player = team.players().create(new PlayerData(id, "Tony"));
         ScoreManager score = player.score();
         score.set(10);
         score.add(5);
@@ -19,7 +22,7 @@ public class BasicTest {
         assertEquals(15, player.score().get());
 
         // Deep searching
-        app.teams().findPlayer("player1").ifPresent(p -> p.score().add(2));
+        app.teams().findPlayer(id).ifPresent(p -> p.score().add(2));
 
         assertEquals(17, player.score().get());
     }

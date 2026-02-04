@@ -1,6 +1,7 @@
 package org.tpunn.autoblade;
 
 import java.util.Optional;
+import java.util.UUID;
 
 import org.tpunn.autoblade.annotations.Create;
 import org.tpunn.autoblade.annotations.Lookup;
@@ -15,5 +16,5 @@ public interface TeamRepository {
     TeamBlade get(String teamId);
 
     @Lookup
-    Optional<PlayerBlade> findPlayer(String playerId);
+    Optional<PlayerBlade> findPlayer(UUID playerId);
 }

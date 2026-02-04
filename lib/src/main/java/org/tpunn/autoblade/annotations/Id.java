@@ -8,6 +8,6 @@ import java.lang.annotation.Target;
 /** 
  * Identifies the unique field used to index this object's dynamic scope. 
  */
-@Target(ElementType.FIELD)
+@Target({ElementType.FIELD, ElementType.METHOD, ElementType.RECORD_COMPONENT})
 @Retention(RetentionPolicy.SOURCE)
 public @interface Id {}

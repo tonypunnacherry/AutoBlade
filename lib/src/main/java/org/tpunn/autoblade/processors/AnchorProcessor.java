@@ -1,6 +1,5 @@
 package org.tpunn.autoblade.processors;
 
-import com.google.auto.service.AutoService;
 import com.squareup.javapoet.AnnotationSpec;
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.JavaFile;
@@ -12,9 +11,7 @@ import org.tpunn.autoblade.utilities.LocationResolver;
 import org.tpunn.autoblade.utilities.NamingUtils;
 
 import javax.annotation.processing.AbstractProcessor;
-import javax.annotation.processing.Processor;
 import javax.annotation.processing.RoundEnvironment;
-import javax.annotation.processing.SupportedAnnotationTypes;
 import javax.annotation.processing.SupportedSourceVersion;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Modifier;
@@ -27,10 +24,6 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
-@AutoService(Processor.class)
-@SupportedAnnotationTypes({
-    "org.tpunn.autoblade.annotations.Anchored"
-})
 @SupportedSourceVersion(SourceVersion.RELEASE_17)
 public class AnchorProcessor extends AbstractProcessor {
 

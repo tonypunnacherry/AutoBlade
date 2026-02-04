@@ -9,13 +9,13 @@ import javax.inject.Singleton;
 
 @Singleton
 public final class BladeRegistry {
-    private final ConcurrentMap<String, BladeNode> index = new ConcurrentHashMap<>();
+    private final ConcurrentMap<Object, BladeNode> index = new ConcurrentHashMap<>();
 
     @Inject
     public BladeRegistry() {}
 
     /** Stitching logic: Connects child to parent for graph traversal */
-    public void register(String id, Object instance, String parentId) {
+    public void register(Object id, Object instance, String parentId) {
         BladeNode node = index.computeIfAbsent(id, BladeNode::new);
         node.instance = new WeakReference<>(instance);
         if (parentId != null) {
@@ -26,25 +26,25 @@ public final class BladeRegistry {
 
     /** Deep Search: O(1) Find First */
     @SuppressWarnings("unchecked")
-    public <T> Optional<T> find(String id) {
+    public <T> Optional<T> find(Object id) {
         BladeNode node = index.get(id);
         if (node == null || node.instance == null) return Optional.empty();
-        T blade = (T) node.instance.get();
-        if (blade == null) {
-            index.remove(id); 
+        Object instance = node.instance.get();
+        if (instance == null) {
+            index.remove(id);
             return Optional.empty();
         }
-        return Optional.of(blade);
+        return Optional.of((T) instance);
     }
 
     /** Deep Search: Aggregated Set */
-    public <T> Set<T> findAll(String id, Class<T> type) {
+    public <T> Set<T> findAll(Object id, Class<T> type) {
         return find(id).filter(type::isInstance).map(type::cast)
                 .map(Collections::singleton).orElse(Collections.emptySet());
     }
 
     /** Hierarchical Lookup: Find by specific path */
-    public <T> Optional<T> findInParent(String parentId, String childId, Class<T> type) {
+    public <T> Optional<T> findInParent(Object parentId, Object childId, Class<T> type) {
         BladeNode parent = index.get(parentId);
         if (parent == null) return Optional.empty();
         return parent.children.stream()
@@ -56,9 +56,9 @@ public final class BladeRegistry {
     }
 
     private static class BladeNode {
-        final String id;
+        final Object id;
         volatile WeakReference<Object> instance;
         final Set<BladeNode> children = ConcurrentHashMap.newKeySet();
-        BladeNode(String id) { this.id = id; }
+        BladeNode(Object id) { this.id = id; }
     }
 }

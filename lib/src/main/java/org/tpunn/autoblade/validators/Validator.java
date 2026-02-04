@@ -1,48 +1,102 @@
 package org.tpunn.autoblade.validators;
 
 import org.tpunn.autoblade.annotations.*;
+import org.tpunn.autoblade.utilities.BindingUtils;
 import org.tpunn.autoblade.utilities.LocationResolver;
 
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.annotation.processing.RoundEnvironment;
 import javax.lang.model.element.*;
+import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
-import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
+import java.util.List;
+import java.util.Map;
 
 public class Validator {
     private final ProcessingEnvironment env;
+
     public Validator(ProcessingEnvironment env) { this.env = env; }
 
-    public void validate(RoundEnvironment roundEnv) {
-        // Only target elements that are intended to be part of the framework
-        Set<? extends Element> allManaged = Stream.of(Scoped.class,  Seed.class)
-                .flatMap(anno -> roundEnv.getElementsAnnotatedWith(anno).stream())
-                .collect(Collectors.toSet());
+    public void validate(RoundEnvironment roundEnv, Map<String, TypeElement> anchorMap) {
+        validateSeeds(roundEnv);
+        validateServices(roundEnv);
+        validateRepositories(roundEnv, anchorMap);
+    }
 
-        for (Element e : allManaged) {
+    private void validateSeeds(RoundEnvironment roundEnv) {
+        for (Element e : roundEnv.getElementsAnnotatedWith(Seed.class)) {
             if (!(e instanceof TypeElement te)) continue;
 
-            boolean hasAnchor = hasAnchorMetaAnnotation(te);
-            boolean isImplementation = te.getAnnotation(Scoped.class) != null;
+            long idCount = (te.getKind() == ElementKind.RECORD) 
+                ? te.getRecordComponents().stream().filter(rc -> rc.getAnnotation(Id.class) != null).count()
+                : te.getEnclosedElements().stream().filter(el -> el.getKind() == ElementKind.FIELD && el.getAnnotation(Id.class) != null).count();
 
-            // Rule 1: If it's an implementation, it MUST implement a business interface
-            if (isImplementation && te.getInterfaces().isEmpty()) {
-                env.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                        "AutoBlade: '" + te.getSimpleName() + "' is managed but must implement a business interface for binding.", te);
-            }
-
-            // Rule 2: Validation of seeds
-            if (te.getAnnotation(Seed.class) != null && !hasAnchor) {
-                env.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                        "AutoBlade: Seed '" + te.getSimpleName() + "' must be annotated with an @Anchored to define its scope.", te);
+            if (idCount > 1) {
+                error("Seed '" + te.getSimpleName() + "' cannot have multiple @Id annotations.", te);
             }
         }
     }
 
-    private boolean hasAnchorMetaAnnotation(TypeElement te) {
-        // Older meta-annotation approach removed; presence of an anchor is determined by LocationResolver
-        return !LocationResolver.resolveLocation(te).equals("App");
+    private void validateServices(RoundEnvironment roundEnv) {
+        for (Element e : roundEnv.getElementsAnnotatedWith(Scoped.class)) {
+            if (e instanceof TypeElement te && te.getInterfaces().isEmpty()) {
+                error("Scoped class '" + te.getSimpleName() + "' must implement a business interface.", te);
+            }
+        }
+    }
+
+    private void validateRepositories(RoundEnvironment roundEnv, Map<String, TypeElement> anchorMap) {
+        for (Element e : roundEnv.getElementsAnnotatedWith(Repository.class)) {
+            TypeElement repo = (TypeElement) e;
+            String repoLoc = LocationResolver.resolveLocation(repo).toLowerCase();
+
+            for (Element enclosed : repo.getEnclosedElements()) {
+                if (!(enclosed instanceof ExecutableElement method)) continue;
+
+                boolean isCreate = BindingUtils.hasAnnotation(method, Create.class.getName());
+                boolean isLookup = BindingUtils.hasAnnotation(method, Lookup.class.getName());
+                if (!isCreate && !isLookup) continue;
+
+                List<? extends VariableElement> params = method.getParameters();
+                if (params.size() != 1) {
+                    error("Method '" + method.getSimpleName() + "' must have exactly one parameter.", method);
+                    continue;
+                }
+
+                validateSignature(method, params.get(0), repoLoc, anchorMap, isCreate, isLookup);
+            }
+        }
+    }
+
+    private void validateSignature(ExecutableElement m, VariableElement p, String repoLoc, 
+                                   Map<String, TypeElement> anchorMap, boolean isCreate, boolean isLookup) {
+        
+        var targetBlade = BindingUtils.extractBladeType(m);
+        String targetAnchor = BindingUtils.parseAnchorFromBladeName(targetBlade).toLowerCase();
+        TypeElement seed = anchorMap.get(targetAnchor);
+
+        if (seed == null) {
+            error("No @Seed found for anchor [" + targetAnchor + "].", m);
+            return;
+        }
+
+        TypeMirror pType = p.asType();
+        TypeMirror idType = BindingUtils.resolveIdType(seed);
+        TypeMirror sType = seed.asType();
+
+        boolean matchesId = env.getTypeUtils().isSameType(pType, idType);
+        boolean matchesSeed = env.getTypeUtils().isSameType(pType, sType);
+
+        if (!matchesId && !matchesSeed) {
+            error(String.format("Param mismatch. Expected Seed [%s] or ID [%s].", sType, idType), p);
+        }
+
+        if (isCreate && matchesId && !matchesSeed) {
+            error("@Create methods must accept the full Seed object.", p);
+        }
+    }
+
+    private void error(String msg, Element e) {
+        env.getMessager().printMessage(Diagnostic.Kind.ERROR, "AutoBlade: " + msg, e);
     }
 }

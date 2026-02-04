@@ -6,7 +6,7 @@ import org.tpunn.autoblade.annotations.Anchored;
 import org.tpunn.autoblade.annotations.Scoped;
 
 @Scoped
-@Anchored("Player")
+@Anchored(Anchor.PLAYER)
 public class ScoreManagerImpl implements ScoreManager {
     private int score;
 

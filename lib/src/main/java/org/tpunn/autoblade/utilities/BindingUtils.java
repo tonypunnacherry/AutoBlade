@@ -1,47 +1,89 @@
 package org.tpunn.autoblade.utilities;
 
 import com.squareup.javapoet.ClassName;
+import com.squareup.javapoet.TypeName;
 import org.tpunn.autoblade.annotations.Id;
 
-import java.util.Optional;
-
 import javax.lang.model.element.*;
+import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 
 public final class BindingUtils {
     private BindingUtils() {}
 
+    /** Extracts the raw Blade type from Optional<T>, Set<T>, or T */
+    public static TypeName extractBladeType(ExecutableElement method) {
+        TypeMirror returnType = method.getReturnType();
+        if (returnType.getKind() == TypeKind.DECLARED) {
+            DeclaredType declared = (DeclaredType) returnType;
+            // If it's a wrapper like Optional<PlayerBlade> or Set<PlayerBlade>
+            if (!declared.getTypeArguments().isEmpty()) {
+                return TypeName.get(declared.getTypeArguments().get(0));
+            }
+        }
+        return TypeName.get(returnType);
+    }
+
+    /** Converts a Blade TypeName back to its Anchor string (e.g., PlayerBlade -> PLAYER) */
+    public static String parseAnchorFromBladeName(TypeName bladeType) {
+        String simpleName = (bladeType instanceof ClassName cn) 
+            ? cn.simpleName() 
+            : bladeType.toString().substring(bladeType.toString().lastIndexOf('.') + 1);
+
+        // Normalize to lowercase to match the map keys
+        return simpleName.replace("Blade", "")
+                        .replace("Contract", "")
+                        .replace("_Auto", "")
+                        .toLowerCase(); 
+    }
+
     /** Parses the base name for a Blade (e.g., "UserBladeContract" -> "User") */
     public static String parseBladeName(ExecutableElement method) {
         TypeMirror returnType = method.getReturnType();
-        if (returnType.getKind() != TypeKind.DECLARED) return "Unknown";
+        // If it's a collection/optional, get the inner type name
+        if (returnType instanceof DeclaredType dt && !dt.getTypeArguments().isEmpty()) {
+            returnType = dt.getTypeArguments().get(0);
+        }
+        
         String simple = returnType.toString();
         simple = simple.substring(simple.lastIndexOf('.') + 1);
-        return simple.replace("Contract", "").replace("Blade", "");
+        return simple.replace("Contract", "").replace("Blade", "").replace("_Auto", "");
     }
 
-    /** Finds the method or field annotated with @Id in a Record or class */
-    public static String resolveIdAccessor(TypeElement record) {
-        // Search record components first (Java 17+)
-        Optional<String> recordId = record.getRecordComponents().stream()
-                .filter(rc -> rc.getAnnotation(Id.class) != null)
-                .map(rc -> rc.getSimpleName().toString())
-                .findFirst();
+    public static TypeMirror resolveIdType(TypeElement seed) {
+        Element idElement = findIdElement(seed);
+        if (idElement == null) return seed.asType(); // Self-ID fallback
         
-        if (recordId.isPresent()) return recordId.get();
-
-        // Fallback to standard methods/fields
-        return record.getEnclosedElements().stream()
-                .filter(e -> e.getAnnotation(Id.class) != null)
-                .findFirst()
-                .map(e -> e.getSimpleName().toString())
-                .orElse("id"); // Default fallback
+        return (idElement instanceof ExecutableElement m) 
+            ? m.getReturnType() 
+            : idElement.asType();
     }
 
-    /** Safely returns ClassName for AppBlade to avoid direct dependency gridlock */
-    public static ClassName getAppBlade(String pkg) {
-        return ClassName.get(pkg, "AppBlade");
+    public static String resolveIdAccessor(TypeElement seed) {
+        Element idElement = findIdElement(seed);
+        if (idElement == null) return ""; // Self-ID: Use object itself
+
+        String name = idElement.getSimpleName().toString();
+        
+        // Check if it's a Record Component or a Method - both need ()
+        // Note: getKind().toString() check for RECORD_COMPONENT is most compatible
+        boolean isMethodLike = idElement.getKind() == ElementKind.METHOD || 
+                            idElement.getKind().toString().equals("RECORD_COMPONENT");
+                            
+        return isMethodLike ? name + "()" : name;
+    }
+
+    private static Element findIdElement(TypeElement seed) {
+        // 1. Check Record Components (Java 16+)
+        for (RecordComponentElement rc : seed.getRecordComponents()) {
+            if (rc.getAnnotation(Id.class) != null) return rc;
+        }
+        // 2. Check Enclosed Elements (Fields/Methods)
+        for (Element e : seed.getEnclosedElements()) {
+            if (e.getAnnotation(Id.class) != null) return e;
+        }
+        return null;
     }
 
     public static boolean hasAnnotation(Element element, String qualifiedName) {
@@ -52,16 +94,11 @@ public final class BindingUtils {
     public static String parseBladeNameFromRepo(TypeElement repo) {
         return repo.getEnclosedElements().stream()
                 .filter(e -> e.getKind() == ElementKind.METHOD)
-                // Explicitly cast and map in one step to keep the type info clear
                 .map(e -> (ExecutableElement) e)
                 .filter(m -> hasAnnotation(m, "org.tpunn.autoblade.annotations.Create") 
                         || hasAnnotation(m, "org.tpunn.autoblade.annotations.Lookup"))
-                // Use a block lambda to ensure the return type is explicitly String
-                .map((ExecutableElement m) -> {
-                    return parseBladeName(m);
-                })
+                .map(BindingUtils::parseBladeName)
                 .findFirst()
                 .orElse("Unknown");
     }
-
 }

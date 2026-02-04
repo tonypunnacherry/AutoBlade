@@ -15,23 +15,23 @@ public final class RepoOps {
      * Atomic creation logic.
      * Uses computeIfAbsent for ConcurrentMaps to ensure thread-safety.
      */
-    public static <T> T createAtomic(Map<String, T> cache, String id, Supplier<T> builder) {
-        if (id == null) {
-            throw new IllegalArgumentException("ID cannot be null for creation");
-        }
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public static <T> T createAtomic(Map<?, T> cache, Object id, Supplier<T> builder) {
+        if (id == null) throw new IllegalArgumentException("ID cannot be null");
+
+        // Use a raw cast to 'Map' to bypass capture #1 extends Object issues
+        Map rawCache = (Map) cache;
 
         if (cache instanceof ConcurrentMap) {
-            return ((ConcurrentMap<String, T>) cache).computeIfAbsent(id, k -> builder.get());
+            return (T) ((ConcurrentMap) rawCache).computeIfAbsent(id, k -> builder.get());
         }
 
-        // Standard Map fallback (Check-then-act)
         synchronized (cache) {
-            T existing = cache.get(id);
-            if (existing != null) {
-                return existing;
-            }
+            T existing = (T) rawCache.get(id);
+            if (existing != null) return existing;
+            
             T created = builder.get();
-            cache.put(id, created);
+            rawCache.put(id, created);
             return created;
         }
     }
@@ -39,7 +39,7 @@ public final class RepoOps {
     /**
      * Standard local lookup logic.
      */
-    public static <T> T lookup(Map<String, T> cache, String id) {
+    public static <T> T lookup(Map<Object, T> cache, Object id) {
         if (id == null) return null;
         return cache.get(id);
     }
@@ -47,14 +47,14 @@ public final class RepoOps {
     /**
      * Performs a deep search via the Global Registry and returns the first match.
      */
-    public static <T> Optional<T> findFirst(BladeRegistry registry, String id) {
+    public static <T> Optional<T> findFirst(BladeRegistry registry, Object id) {
         return registry.find(id);
     }
 
     /**
      * Performs a deep search via the Global Registry and returns all matches.
      */
-    public static <T> Set<T> findAll(BladeRegistry registry, String id, Class<T> type) {
+    public static <T> Set<T> findAll(BladeRegistry registry, Object id, Class<T> type) {
         return registry.findAll(id, type);
     }
 
@@ -62,7 +62,7 @@ public final class RepoOps {
      * Hierarchical traversal logic for nested lookups.
      * e.g., Finding a project within a specific user.
      */
-    public static <T> Optional<T> traverse(BladeRegistry registry, String parentId, String childId, Class<T> type) {
+    public static <T> Optional<T> traverse(BladeRegistry registry, Object parentId, Object childId, Class<T> type) {
         return registry.findInParent(parentId, childId, type);
     }
 }

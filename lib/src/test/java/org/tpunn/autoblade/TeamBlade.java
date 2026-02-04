@@ -2,7 +2,7 @@ package org.tpunn.autoblade;
 
 import org.tpunn.autoblade.annotations.Blade;
 
-@Blade("Team")
+@Blade(Anchor.TEAM)
 public interface TeamBlade {
     PlayerRepository players();
 }
