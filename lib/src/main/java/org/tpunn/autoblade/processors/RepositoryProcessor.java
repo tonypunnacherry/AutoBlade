@@ -46,6 +46,15 @@ public class RepositoryProcessor extends AbstractProcessor {
     }
 
     private void generateRepoImpl(TypeElement repo, String pkg) {
+        if (repo.getKind() == ElementKind.CLASS && repo.getInterfaces().isEmpty()) {
+            processingEnv.getMessager().printMessage(
+                Diagnostic.Kind.ERROR,
+                "Repository class " + repo.getSimpleName() + " must implement an interface to be used as a contract.",
+                repo
+            );
+            return;
+        }
+
         String implName = repo.getSimpleName() + "_Repo";
         boolean isConcurrent = BindingUtils.hasAnnotation(repo, "org.tpunn.autoblade.annotations.Concurrent");
         
@@ -53,15 +62,19 @@ public class RepositoryProcessor extends AbstractProcessor {
         ClassName repoOps = ClassName.get(pkg, "RepoOps");
         String bladeBase = BindingUtils.parseBladeNameFromRepo(repo);
         
-        // Reference the Dagger-managed Auto subcomponent builder
         ClassName autoBladeType = ClassName.get(pkg, bladeBase + "Blade_Auto");
         TypeName providerType = ParameterizedTypeName.get(ClassName.get(Provider.class), autoBladeType.nestedClass("Builder"));
 
         TypeSpec.Builder builder = TypeSpec.classBuilder(implName)
                 .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
-                .addSuperinterface(TypeName.get(repo.asType()))
                 .addAnnotation(ClassName.get("javax.inject", "Singleton"))
                 .addAnnotation(AnnotationSpec.builder(SuppressWarnings.class).addMember("value", "$S", "all").build());
+
+        if (repo.getKind() == ElementKind.INTERFACE) {
+            builder.addSuperinterface(TypeName.get(repo.asType()));
+        } else {
+            builder.superclass(TypeName.get(repo.asType()));
+        }
 
         builder.addField(registryType, "registry", Modifier.PRIVATE, Modifier.FINAL)
                .addField(providerType, "builderProvider", Modifier.PRIVATE, Modifier.FINAL);
@@ -76,7 +89,11 @@ public class RepositoryProcessor extends AbstractProcessor {
 
         for (Element e : repo.getEnclosedElements()) {
             if (e.getKind() != ElementKind.METHOD) continue;
-            processMethod(builder, (ExecutableElement) e, bladeBase, isConcurrent, repoOps);
+            ExecutableElement m = (ExecutableElement) e;
+            
+            if (m.getModifiers().contains(Modifier.ABSTRACT)) {
+                processMethod(builder, m, bladeBase, isConcurrent, repoOps);
+            }
         }
 
         writeFile(pkg, builder.build());

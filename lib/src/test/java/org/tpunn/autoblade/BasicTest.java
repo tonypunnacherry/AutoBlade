@@ -23,7 +23,10 @@ public class BasicTest {
 
         // Deep searching
         app.teams().findPlayer(id).ifPresent(p -> p.score().add(2));
-
         assertEquals(17, player.score().get());
+
+        // Custom searching
+        app.teams().findPlayerInTeam("team1", id).score().add(2);
+        assertEquals(19, player.score().get());
     }
 }
