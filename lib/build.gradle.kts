@@ -59,3 +59,11 @@ tasks.jar {
         )
     }
 }
+
+tasks.withType<Test> {
+    testLogging {
+        showStandardStreams = true
+        // Optional: show when tests pass/fail
+        events("passed", "skipped", "failed")
+    }
+}

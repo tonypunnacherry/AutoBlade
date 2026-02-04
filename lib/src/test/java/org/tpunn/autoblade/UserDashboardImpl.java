@@ -9,10 +9,10 @@ import javax.inject.Inject;
 @Anchored("User")
 public class UserDashboardImpl implements UserDashboard {
     private final UserProfile userProfile;
-    private final User userData;
+    private final UserData userData;
 
     @Inject
-    public UserDashboardImpl(UserProfile userProfile, User userData) {
+    public UserDashboardImpl(UserProfile userProfile, UserData userData) {
         this.userProfile = userProfile;
         this.userData = userData;
     }

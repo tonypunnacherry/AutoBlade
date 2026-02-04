@@ -8,10 +8,10 @@ import javax.inject.Inject;
 @Scoped
 @Anchored("User")
 public class UserProfileService implements UserProfile {
-    private final User data;
+    private final UserData data;
 
     @Inject
-    public UserProfileService(User data) {
+    public UserProfileService(UserData data) {
         this.data = data;
     }
 

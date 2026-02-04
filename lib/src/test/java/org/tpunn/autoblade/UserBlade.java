@@ -4,5 +4,5 @@ import org.tpunn.autoblade.annotations.Blade;
 
 @Blade("User")
 public interface UserBlade {
-    UserDashboard getUserDashboard();
+    UserDashboard dashboard();
 }

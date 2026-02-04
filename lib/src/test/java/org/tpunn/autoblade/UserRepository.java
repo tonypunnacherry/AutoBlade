@@ -7,7 +7,7 @@ import org.tpunn.autoblade.annotations.Repository;
 @Repository
 public interface UserRepository {
     @Create
-    UserBlade create(User user);
+    UserBlade create(UserData user);
 
     @Lookup
     UserBlade get(String userId);
