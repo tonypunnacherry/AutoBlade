@@ -1,14 +1,19 @@
 package org.tpunn.autoblade;
 
+import java.util.Optional;
+
 import org.tpunn.autoblade.annotations.Create;
 import org.tpunn.autoblade.annotations.Lookup;
 import org.tpunn.autoblade.annotations.Repository;
 
 @Repository
-public interface UserRepository {
+public interface TeamRepository {
     @Create
-    UserBlade create(UserData user);
+    TeamBlade create(TeamData team);
 
     @Lookup
-    UserBlade get(String userId);
+    TeamBlade get(String teamId);
+
+    @Lookup
+    Optional<PlayerBlade> findPlayer(String playerId);
 }

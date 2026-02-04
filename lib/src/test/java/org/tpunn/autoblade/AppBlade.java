@@ -4,5 +4,5 @@ import org.tpunn.autoblade.annotations.Blade;
 
 @Blade
 public interface AppBlade {
-    UserRepository userRepo();
+    TeamRepository teams();
 }

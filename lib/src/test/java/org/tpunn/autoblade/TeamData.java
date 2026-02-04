@@ -3,8 +3,8 @@ package org.tpunn.autoblade;
 import org.tpunn.autoblade.annotations.Id;
 import org.tpunn.autoblade.annotations.Seed;
 
-@Seed("User")
-public record UserData(
-        @Id String userId,
-        String username
+@Seed("Team")
+public record TeamData(
+        @Id String teamId,
+        String teamName
 ) {}
