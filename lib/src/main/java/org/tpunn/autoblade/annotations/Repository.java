@@ -5,7 +5,8 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/** Identifies an entry point for the AppComponent. */
+/** Generates a service that manages the creation, updation, deletion, and searching of sub-blades. */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.SOURCE)
-public @interface EntryPoint {}
+public @interface Repository {
+}

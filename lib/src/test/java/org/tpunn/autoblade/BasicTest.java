@@ -5,12 +5,11 @@ import org.junit.Test;
 public class BasicTest {
     @Test
     public void test() {
-        AppBlade appBlade = DaggerAppBlade.create();
+        AppBlade appBlade = DaggerAppBlade_Auto.create();
 
-        UserBlade userBlade = appBlade.getUserBuilder()
-            .seed(new User("jdoe", "John Doe"))
-            .build();
+        appBlade.getUserRepository().create(
+                new User("jdoe", "John Doe"));
             
-        userBlade.getUserDashboard().display();
+        appBlade.getUserRepository().get("jdoe").getUserDashboard().display();
     }
 }

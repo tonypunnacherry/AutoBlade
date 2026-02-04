@@ -2,161 +2,97 @@ package org.tpunn.autoblade.processors;
 
 import com.squareup.javapoet.*;
 import org.tpunn.autoblade.annotations.*;
-import org.tpunn.autoblade.utilities.InterfaceSelector;
-import org.tpunn.autoblade.utilities.GeneratedPackageResolver;
-import org.tpunn.autoblade.utilities.LocationResolver;
-import org.tpunn.autoblade.utilities.FileCollector;
-import javax.tools.Diagnostic;
-import com.google.auto.service.AutoService;
-
-import javax.annotation.processing.AbstractProcessor;
-import javax.annotation.processing.Processor;
-import javax.annotation.processing.RoundEnvironment;
-import javax.annotation.processing.SupportedAnnotationTypes;
-import javax.annotation.processing.SupportedSourceVersion;
-import javax.lang.model.SourceVersion;
-import javax.lang.model.element.TypeElement;
-import javax.lang.model.element.Modifier;
-import javax.lang.model.type.TypeMirror;
+import org.tpunn.autoblade.utilities.*;
+import javax.annotation.processing.*;
+import javax.lang.model.element.*;
 import java.io.IOException;
 import java.util.*;
+import java.util.stream.Collectors;
 
-@AutoService(Processor.class)
-@SupportedAnnotationTypes({
-    "org.tpunn.autoblade.annotations.Transient",
-    "org.tpunn.autoblade.annotations.Scoped",
-    "org.tpunn.autoblade.annotations.EntryPoint"
-})
-@SupportedSourceVersion(SourceVersion.RELEASE_17)
 public class BindingProcessor extends AbstractProcessor {
-    private static final String DEFAULT_LOCATION = "App";
-
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
         if (roundEnv.processingOver()) return false;
 
-        // Collect all managed types
-        Set<TypeElement> services = FileCollector.collectManaged(roundEnv,
-                Arrays.asList(Transient.class, Scoped.class, EntryPoint.class));
+        Set<TypeElement> svcs = FileCollector.collectManaged(roundEnv, Arrays.asList(Transient.class, Scoped.class, Anchored.class));
+        Set<TypeElement> repos = FileCollector.collectManaged(roundEnv, Repository.class);
+        Set<TypeElement> allContracts = FileCollector.collectManaged(roundEnv, Blade.class);
 
-        Map<String, List<TypeElement>> byAnchor = LocationResolver.groupByAnchor(services);
+        if (svcs.isEmpty() && repos.isEmpty() && allContracts.isEmpty()) return true;
 
-        for (Map.Entry<String, List<TypeElement>> entry : byAnchor.entrySet()) {
-            List<TypeElement> list = entry.getValue();
-            TypeElement origin = list.stream().filter(te -> te.getAnnotation(Seed.class) != null).findFirst().orElse(list.get(0));
-            generateForAnchor(entry.getKey(), list, origin);
+        // Resolve package based on all elements involved in bindings
+        Set<TypeElement> allElements = new HashSet<>(svcs);
+        allElements.addAll(repos);
+        allElements.addAll(allContracts);
+        String pkg = GeneratedPackageResolver.computeGeneratedPackage(allElements, processingEnv);
+
+        Map<String, List<TypeElement>> svcsByAnchor = LocationResolver.groupByAnchor(svcs);
+        Set<String> anchors = new HashSet<>(svcsByAnchor.keySet());
+        anchors.add("App");
+
+        for (String anchor : anchors) {
+            generateModule(pkg, anchor, svcsByAnchor.getOrDefault(anchor, Collections.emptyList()), repos, allContracts);
         }
-
         return true;
     }
 
-    private void generateForAnchor(String anchor, List<TypeElement> svcs, TypeElement originating) {
-        String pkg = GeneratedPackageResolver.computeGeneratedPackage(Collections.singleton(originating), processingEnv);
-        processingEnv.getMessager().printMessage(Diagnostic.Kind.NOTE, "AutoBlade: Generating module for anchor '" + anchor + "' in '" + pkg + "' (" + svcs.size() + " services).");
+    private void generateModule(String pkg, String anchor, List<TypeElement> svcs, Set<TypeElement> repos, Set<TypeElement> contracts) {
+        // 1. Start a single Module annotation builder
+        AnnotationSpec.Builder moduleAnno = AnnotationSpec.builder(ClassName.get("dagger", "Module"));
 
-        TypeSpec module = createModuleSpec(anchor, svcs, pkg);
-        writeFileForOrigin(pkg, module, List.of(originating));
-    }
+        if ("App".equalsIgnoreCase(anchor)) {
+            // Add subcomponents to the SAME annotation builder
+            List<String> subs = contracts.stream()
+                .filter(c -> !"App".equalsIgnoreCase(LocationResolver.resolveLocation(c)))
+                .map(c -> LocationResolver.resolveLocation(c) + "Blade_Auto.class")
+                .collect(Collectors.toList());
+            
+            if (!subs.isEmpty()) {
+                moduleAnno.addMember("subcomponents", "{$L}", String.join(", ", subs));
+            }
+        }
 
-    private TypeSpec createModuleSpec(String anchor, List<TypeElement> svcs, String pkg) {
-        TypeSpec.Builder mod = TypeSpec.classBuilder(anchor + "AutoModule")
-                .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
-                .addAnnotation(ClassName.get("dagger", "Module"));
+        // 2. Build the interface with the single consolidated annotation
+        TypeSpec.Builder mod = TypeSpec.interfaceBuilder(anchor + "AutoModule")
+                .addModifiers(Modifier.PUBLIC)
+                .addAnnotation(moduleAnno.build());
 
+        // 3. Bind Repositories (Only in AppAutoModule)
+        if ("App".equalsIgnoreCase(anchor)) {
+            for (TypeElement repo : repos) {
+                mod.addMethod(MethodSpec.methodBuilder("bind" + repo.getSimpleName())
+                    .addAnnotation(ClassName.get("dagger", "Binds"))
+                    .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
+                    .returns(TypeName.get(repo.asType()))
+                    .addParameter(ClassName.get(pkg, repo.getSimpleName() + "_Repo"), "impl")
+                    .build());
+            }
+        }
+
+        // 4. Bind Services (Transient/Scoped)
         for (TypeElement te : svcs) {
-            TypeMirror iface = InterfaceSelector.selectBestInterface(te, processingEnv);
-            if (iface == null) {
-                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                        "AutoBlade: Cannot generate binding for '" + te.getSimpleName() + "' as it could not find a valid interface.", te);
-                continue;
+            var iface = InterfaceSelector.selectBestInterface(te, processingEnv);
+            if (iface == null || processingEnv.getTypeUtils().isSameType(iface, te.asType())) continue;
+
+            MethodSpec.Builder mb = MethodSpec.methodBuilder("bind" + te.getSimpleName())
+                    .addAnnotation(ClassName.get("dagger", "Binds"))
+                    .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
+                    .returns(TypeName.get(iface))
+                    .addParameter(TypeName.get(te.asType()), "impl");
+
+            if (!hasMirror(te, "org.tpunn.autoblade.annotations.Transient")) {
+                String scope = LocationResolver.resolveAnchorName(te);
+                mb.addAnnotation("Singleton".equals(scope) ? ClassName.get("javax.inject", "Singleton") : ClassName.get(pkg, scope));
             }
-
-            if (iface.toString().equals(te.asType().toString())) {
-                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                        "AutoBlade: Implementation '" + te.getSimpleName() + "' cannot be bound to itself. Please expose a distinct interface.", te);
-                continue;
-            }
-
-            ScopeKind scopeKind;
-            try {
-                scopeKind = determineScopeKind(te, anchor);
-            } catch (IllegalArgumentException e) {
-                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "AutoBlade: " + e.getMessage(), te);
-                continue;
-            }
-
-            MethodSpec m = createBindMethod(te, iface, scopeKind, pkg);
-            if (m != null) mod.addMethod(m);
-        }
-        return mod.build();
-    }
-
-    private MethodSpec createBindMethod(TypeElement impl, TypeMirror iface, ScopeKind scopeKind, String pkg) {
-        MethodSpec.Builder bind = MethodSpec.methodBuilder("bind" + impl.getSimpleName())
-                .addAnnotation(ClassName.get("dagger", "Binds"))
-                .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
-                .returns(TypeName.get(iface))
-                .addParameter(TypeName.get(impl.asType()), "impl");
-
-        // Based on the scope, add the appropriate annotation
-        switch (scopeKind) {
-            case NONE: break;
-            case SINGLETON: bind.addAnnotation(ClassName.get("javax.inject", "Singleton")); break;
-            case ANCHOR: bind.addAnnotation(resolveAnchorAnnotation(impl, pkg)); break;
+            mod.addMethod(mb.build());
         }
 
-        return bind.build();
+        try { 
+            JavaFile.builder(pkg, mod.build()).build().writeTo(processingEnv.getFiler()); 
+        } catch (IOException ignored) {}
     }
 
-    private ClassName resolveAnchorAnnotation(TypeElement te, String pkg) {
-        String loc = LocationResolver.resolveLocation(te);
-        if (DEFAULT_LOCATION.equals(loc)) return ClassName.get("javax.inject", "Singleton");
-        return ClassName.get(pkg, "Auto" + loc + "Anchor");
+    private boolean hasMirror(TypeElement te, String fq) {
+        return te.getAnnotationMirrors().stream().anyMatch(m -> ((TypeElement)m.getAnnotationType().asElement()).getQualifiedName().contentEquals(fq));
     }
-
-    private ScopeKind determineScopeKind(TypeElement te, String anchor) {
-        boolean isTransient = te.getAnnotation(Transient.class) != null;
-        boolean isEntryPoint = te.getAnnotation(EntryPoint.class) != null;
-        boolean isScoped = te.getAnnotation(Scoped.class) != null;
-        boolean isSingleton = te.getAnnotation(javax.inject.Singleton.class) != null;
-
-        if (DEFAULT_LOCATION.equals(anchor)) {
-            // App-level (Root Component) logic
-            if (isScoped) {
-                // App services cannot be scoped
-                throw new IllegalArgumentException("@Scoped is for subcomponents. Use @Singleton at the App level: " + te.getSimpleName());
-            }
-            
-            // Only apply Singleton if explicitly marked or if it's a non-transient EntryPoint
-            if (isTransient) return ScopeKind.NONE;
-            if (isSingleton || isEntryPoint) return ScopeKind.SINGLETON;
-            
-            return ScopeKind.NONE; // Default to unscoped for safety
-        } else {
-            // Subcomponent logic
-            if (isSingleton) {
-                throw new IllegalArgumentException("@Singleton cannot be used in a subcomponent (anchor: " + anchor + "). Use @Scoped instead.");
-            }
-            if (isTransient) return ScopeKind.NONE;
-            
-            // Every other non-transient anchored service gets the Anchor scope
-            return ScopeKind.ANCHOR;
-        }
-    }
-
-    private void writeFileForOrigin(String pkg, TypeSpec spec, List<TypeElement> origins) {
-        try {
-            JavaFile.builder(pkg, spec)
-                    .build()
-                    .writeTo(processingEnv.getFiler());
-            
-            processingEnv.getMessager().printMessage(Diagnostic.Kind.NOTE, 
-                    "AutoBlade: Generated " + pkg + "." + spec.name);
-        } catch (IOException e) {
-            processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, 
-                    "AutoBlade: Failed to write " + spec.name + ": " + e.getMessage());
-        }
-    }
-
-    private enum ScopeKind { NONE, SINGLETON, ANCHOR }
 }

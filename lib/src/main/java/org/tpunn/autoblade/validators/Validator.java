@@ -17,7 +17,7 @@ public class Validator {
 
     public void validate(RoundEnvironment roundEnv) {
         // Only target elements that are intended to be part of the framework
-        Set<? extends Element> allManaged = Stream.of(Scoped.class, EntryPoint.class, Seed.class)
+        Set<? extends Element> allManaged = Stream.of(Scoped.class,  Seed.class)
                 .flatMap(anno -> roundEnv.getElementsAnnotatedWith(anno).stream())
                 .collect(Collectors.toSet());
 
@@ -25,7 +25,7 @@ public class Validator {
             if (!(e instanceof TypeElement te)) continue;
 
             boolean hasAnchor = hasAnchorMetaAnnotation(te);
-            boolean isImplementation = te.getAnnotation(Scoped.class) != null || te.getAnnotation(EntryPoint.class) != null;
+            boolean isImplementation = te.getAnnotation(Scoped.class) != null;
 
             // Rule 1: If it's an implementation, it MUST implement a business interface
             if (isImplementation && te.getInterfaces().isEmpty()) {
