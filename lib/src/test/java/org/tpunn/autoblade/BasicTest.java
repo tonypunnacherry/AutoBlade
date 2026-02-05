@@ -9,7 +9,7 @@ import org.junit.Test;
 public class BasicTest {
     @Test
     public void test() {
-        AppBlade app = DaggerAppBlade_Auto.create();
+        AppBlade app = AutoBladeApp.start();
 
         app.teams().create(new TeamData("team1", "Cool Team"));
         TeamBlade team = app.teams().get("team1");
@@ -28,5 +28,16 @@ public class BasicTest {
         // Custom searching
         app.teams().findPlayerInTeam("team1", id).score().add(2);
         assertEquals(19, player.score().get());
+
+        // Test legacy
+        assertEquals("https://legacy-api.com", app.legacy().getUrl());
+
+        // Test factory
+        PlayerBadge badge = player.badgeFactory().create("MVP");
+        assertEquals("MVP for Tony", badge.getName());
+
+        // Test builder
+        PlayerBadge badge2 = player.badgeBuilder().setName("All-Star").build();
+        assertEquals("All-Star for Tony", badge2.getName());
     }
 }

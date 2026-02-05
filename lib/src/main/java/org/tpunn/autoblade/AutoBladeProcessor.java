@@ -19,7 +19,9 @@ import java.util.*;
     "org.tpunn.autoblade.annotations.Seed",
     "org.tpunn.autoblade.annotations.Scoped",
     "org.tpunn.autoblade.annotations.Transient",
-    "org.tpunn.autoblade.annotations.Anchored"
+    "org.tpunn.autoblade.annotations.Anchored",
+    "org.tpunn.autoblade.annotations.Factory",
+    "org.tpunn.autoblade.annotations.Builder"
 })
 public class AutoBladeProcessor extends AbstractProcessor {
 
@@ -27,6 +29,7 @@ public class AutoBladeProcessor extends AbstractProcessor {
     private ComponentProcessor componentProcessor;
     private BindingProcessor bindingProcessor;
     private AnchorProcessor anchorProcessor;
+    private FactoryProcessor factoryProcessor;
     private Validator validator;
 
     @Override
@@ -36,12 +39,14 @@ public class AutoBladeProcessor extends AbstractProcessor {
         this.componentProcessor = new ComponentProcessor();
         this.bindingProcessor = new BindingProcessor();
         this.anchorProcessor = new AnchorProcessor();
+        this.factoryProcessor = new FactoryProcessor();
         this.validator = new Validator(processingEnv);
 
         this.repositoryProcessor.init(processingEnv);
         this.componentProcessor.init(processingEnv);
         this.bindingProcessor.init(processingEnv);
         this.anchorProcessor.init(processingEnv);
+        this.factoryProcessor.init(processingEnv);
     }
 
     @Override
@@ -58,6 +63,7 @@ public class AutoBladeProcessor extends AbstractProcessor {
 
         // Execute sequentially: Repository -> Component -> Anchor -> Binding
         repositoryProcessor.process(annotations, roundEnv);
+        factoryProcessor.process(annotations, roundEnv);
         componentProcessor.process(annotations, roundEnv);
         anchorProcessor.process(annotations, roundEnv);
         bindingProcessor.process(annotations, roundEnv);
