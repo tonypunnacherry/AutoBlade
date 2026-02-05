@@ -45,7 +45,7 @@ public final class BindingUtils {
         if (returnType instanceof DeclaredType dt && !dt.getTypeArguments().isEmpty()) {
             returnType = dt.getTypeArguments().get(0);
         }
-        
+        if (returnType == null) throw new IllegalArgumentException("Method must have a return type");
         String simple = returnType.toString();
         simple = simple.substring(simple.lastIndexOf('.') + 1);
         return simple.replace("Contract", "").replace("Blade", "").replace("_Auto", "");
@@ -77,10 +77,12 @@ public final class BindingUtils {
     private static Element findIdElement(TypeElement seed) {
         // 1. Check Record Components (Java 16+)
         for (RecordComponentElement rc : seed.getRecordComponents()) {
+            if (rc == null) continue;
             if (rc.getAnnotation(Id.class) != null) return rc;
         }
         // 2. Check Enclosed Elements (Fields/Methods)
         for (Element e : seed.getEnclosedElements()) {
+            if (e == null) continue;
             if (e.getAnnotation(Id.class) != null) return e;
         }
         return null;
@@ -88,12 +90,12 @@ public final class BindingUtils {
 
     public static boolean hasAnnotation(Element element, String qualifiedName) {
         return element.getAnnotationMirrors().stream()
-            .anyMatch(mirror -> mirror.getAnnotationType().toString().equals(qualifiedName));
+            .anyMatch(mirror -> mirror != null && mirror.getAnnotationType().toString().equals(qualifiedName));
     }
 
     public static String parseBladeNameFromRepo(TypeElement repo) {
         return repo.getEnclosedElements().stream()
-                .filter(e -> e.getKind() == ElementKind.METHOD)
+                .filter(e -> e != null && e.getKind() == ElementKind.METHOD)
                 .map(e -> (ExecutableElement) e)
                 .filter(m -> hasAnnotation(m, "org.tpunn.autoblade.annotations.Create") 
                         || hasAnnotation(m, "org.tpunn.autoblade.annotations.Lookup"))

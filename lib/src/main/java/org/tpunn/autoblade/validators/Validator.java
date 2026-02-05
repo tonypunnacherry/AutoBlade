@@ -28,8 +28,8 @@ public class Validator {
             if (!(e instanceof TypeElement te)) continue;
 
             long idCount = (te.getKind() == ElementKind.RECORD) 
-                ? te.getRecordComponents().stream().filter(rc -> rc.getAnnotation(Id.class) != null).count()
-                : te.getEnclosedElements().stream().filter(el -> el.getKind() == ElementKind.FIELD && el.getAnnotation(Id.class) != null).count();
+                ? te.getRecordComponents().stream().filter(rc -> rc != null && rc.getAnnotation(Id.class) != null).count()
+                : te.getEnclosedElements().stream().filter(el -> el != null && el.getKind() == ElementKind.FIELD && el.getAnnotation(Id.class) != null).count();
 
             if (idCount > 1) {
                 error("Seed '" + te.getSimpleName() + "' cannot have multiple @Id annotations.", te);
@@ -48,6 +48,7 @@ public class Validator {
     private void validateRepositories(RoundEnvironment roundEnv, Map<String, TypeElement> anchorMap) {
         for (Element e : roundEnv.getElementsAnnotatedWith(Repository.class)) {
             TypeElement repo = (TypeElement) e;
+            if (repo == null) continue;
             String repoLoc = LocationResolver.resolveLocation(repo).toLowerCase();
 
             for (Element enclosed : repo.getEnclosedElements()) {

@@ -40,7 +40,6 @@ public final class RepoOps {
      * Standard local lookup logic.
      */
     public static <T> T lookup(Map<Object, T> cache, Object id) {
-        if (id == null) return null;
         return cache.get(id);
     }
 

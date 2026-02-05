@@ -30,11 +30,23 @@ public final class FileCollector {
         Map<String, TypeElement> map = new HashMap<>();
         Set<TypeElement> seeds = collectManaged(roundEnv, Seed.class);
         for (TypeElement seed : seeds) {
-            Seed anno = seed.getAnnotation(Seed.class);
-            if (anno != null) {
-                // Assuming Seed.value() returns the Anchor string or enum name
-                map.put(anno.value().toString().toLowerCase(), seed);
-            }
+            seed.getAnnotationMirrors().stream()
+                .filter(mirror -> mirror != null && mirror.getAnnotationType().toString().equals(Seed.class.getName()))
+                .findFirst()
+                .ifPresent(mirror -> {
+                    if (mirror == null) return;
+                    mirror.getElementValues().entrySet().stream()
+                        .filter(entry -> {
+                            var key = entry.getKey();
+                            return key != null && key.getSimpleName().contentEquals("value");
+                        })
+                        .findFirst()
+                        .ifPresent(entry -> {
+                            var val = entry.getValue();
+                            if (val == null) return;
+                            map.put(val.getValue().toString().toLowerCase(), seed);
+                        });
+                });
         }
         return map;
     }

@@ -88,7 +88,7 @@ public class RepositoryProcessor extends AbstractProcessor {
                 .build());
 
         for (Element e : repo.getEnclosedElements()) {
-            if (e.getKind() != ElementKind.METHOD) continue;
+            if (e == null || e.getKind() != ElementKind.METHOD) continue;
             ExecutableElement m = (ExecutableElement) e;
             
             if (m.getModifiers().contains(Modifier.ABSTRACT)) {
@@ -103,6 +103,7 @@ public class RepositoryProcessor extends AbstractProcessor {
         if (m.getParameters().isEmpty()) return;
         
         VariableElement param = m.getParameters().get(0);
+        if (param == null) return;
         TypeMirror paramType = param.asType();
         String paramName = param.getSimpleName().toString();
         MethodSpec.Builder mb = MethodSpec.overriding(m);

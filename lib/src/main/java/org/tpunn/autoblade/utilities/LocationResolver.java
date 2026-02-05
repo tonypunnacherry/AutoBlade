@@ -42,9 +42,11 @@ public final class LocationResolver {
      */
     private static String getAnnotationValue(AnnotationMirror mirror, String name) {
         for (Map.Entry<? extends ExecutableElement, ? extends AnnotationValue> entry : mirror.getElementValues().entrySet()) {
-            if (entry.getKey().getSimpleName().contentEquals(name)) {
-                Object val = entry.getValue().getValue();
-                return val instanceof String s ? s : null;
+            var key = entry.getKey();
+            var val = entry.getValue();
+            if (key == null || val == null) continue;
+            if (key.getSimpleName().contentEquals(name)) {
+                return val.getValue() instanceof String s ? s : null;
             }
         }
         return null;

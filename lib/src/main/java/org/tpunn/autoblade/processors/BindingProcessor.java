@@ -112,6 +112,6 @@ public class BindingProcessor extends AbstractProcessor {
 
     private boolean hasMirror(TypeElement te, String fq) {
         return te.getAnnotationMirrors().stream()
-                .anyMatch(m -> ((TypeElement)m.getAnnotationType().asElement()).getQualifiedName().contentEquals(fq));
+                .anyMatch(m -> m != null && ((TypeElement)m.getAnnotationType().asElement()).getQualifiedName().contentEquals(fq));
     }
 }
