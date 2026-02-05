@@ -86,7 +86,7 @@ public class FactoryProcessor extends AbstractProcessor {
                 String pName = param.getSimpleName().toString();
                 assistedNames.add(pName);
                 builder.addField(TypeName.get(param.asType()), pName, Modifier.PRIVATE);
-                builder.addMethod(MethodSpec.methodBuilder("set" + capitalize(pName))
+                builder.addMethod(MethodSpec.methodBuilder(pName)
                         .addModifiers(Modifier.PUBLIC)
                         .returns(ClassName.get(pkg, builderName))
                         .addParameter(TypeName.get(param.asType()), pName)

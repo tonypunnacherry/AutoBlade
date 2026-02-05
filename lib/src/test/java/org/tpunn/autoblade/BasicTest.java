@@ -37,7 +37,7 @@ public class BasicTest {
         assertEquals("MVP for Tony", badge.getName());
 
         // Test builder
-        PlayerBadge badge2 = player.badgeBuilder().setName("All-Star").build();
+        PlayerBadge badge2 = player.badgeBuilder().name("All-Star").build();
         assertEquals("All-Star for Tony", badge2.getName());
     }
 }
