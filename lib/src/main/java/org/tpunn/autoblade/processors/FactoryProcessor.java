@@ -118,5 +118,5 @@ public class FactoryProcessor extends AbstractProcessor {
         } catch (Exception ignored) {}
     }
 
-    private String capitalize(String s) { return s.substring(0,1).toUpperCase() + s.substring(1); }
+    //private String capitalize(String s) { return s.substring(0,1).toUpperCase() + s.substring(1); }
 }

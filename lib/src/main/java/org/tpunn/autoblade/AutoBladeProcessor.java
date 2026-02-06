@@ -27,6 +27,7 @@ public class AutoBladeProcessor extends AbstractProcessor {
 
     private RepositoryProcessor repositoryProcessor;
     private ComponentProcessor componentProcessor;
+    private StrategyProcessor strategyProcessor;
     private BindingProcessor bindingProcessor;
     private AnchorProcessor anchorProcessor;
     private FactoryProcessor factoryProcessor;
@@ -37,6 +38,7 @@ public class AutoBladeProcessor extends AbstractProcessor {
         super.init(processingEnv);
         this.repositoryProcessor = new RepositoryProcessor();
         this.componentProcessor = new ComponentProcessor();
+        this.strategyProcessor = new StrategyProcessor();
         this.bindingProcessor = new BindingProcessor();
         this.anchorProcessor = new AnchorProcessor();
         this.factoryProcessor = new FactoryProcessor();
@@ -44,6 +46,7 @@ public class AutoBladeProcessor extends AbstractProcessor {
 
         this.repositoryProcessor.init(processingEnv);
         this.componentProcessor.init(processingEnv);
+        this.strategyProcessor.init(processingEnv);
         this.bindingProcessor.init(processingEnv);
         this.anchorProcessor.init(processingEnv);
         this.factoryProcessor.init(processingEnv);
@@ -65,6 +68,7 @@ public class AutoBladeProcessor extends AbstractProcessor {
         repositoryProcessor.process(annotations, roundEnv);
         factoryProcessor.process(annotations, roundEnv);
         componentProcessor.process(annotations, roundEnv);
+        strategyProcessor.process(annotations, roundEnv);
         anchorProcessor.process(annotations, roundEnv);
         bindingProcessor.process(annotations, roundEnv);
 

@@ -2,6 +2,7 @@ package org.tpunn.autoblade.validators;
 
 import org.tpunn.autoblade.annotations.*;
 import org.tpunn.autoblade.utilities.BindingUtils;
+import org.tpunn.autoblade.utilities.InterfaceSelector;
 import org.tpunn.autoblade.utilities.LocationResolver;
 
 import javax.annotation.processing.ProcessingEnvironment;
@@ -11,6 +12,7 @@ import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class Validator {
     private final ProcessingEnvironment env;
@@ -21,6 +23,7 @@ public class Validator {
         validateSeeds(roundEnv);
         validateServices(roundEnv);
         validateRepositories(roundEnv, anchorMap);
+        validateStrategies(roundEnv);
     }
 
     private void validateSeeds(RoundEnvironment roundEnv) {
@@ -94,6 +97,41 @@ public class Validator {
 
         if (isCreate && matchesId && !matchesSeed) {
             error("@Create methods must accept the full Seed object.", p);
+        }
+    }
+
+    private void validateStrategies(RoundEnvironment roundEnv) {
+        // Map<InterfaceQualifiedName, FirstFoundAnchorName>
+        Map<String, String> interfaceToAnchor = new java.util.HashMap<>();
+
+        // We scan for all classes that are implementations of a Strategy
+        for (Element e : roundEnv.getElementsAnnotatedWithAny(Set.of(Scoped.class, Transient.class))) {
+            if (!(e instanceof TypeElement te)) continue;
+
+            // Check if this specific class is marked with a @Strategy meta-annotation
+            boolean isStrategy = te.getAnnotationMirrors().stream()
+                .anyMatch(m -> m != null && m.getAnnotationType().asElement().getAnnotation(Strategy.class) != null);
+
+            if (!isStrategy) continue;
+
+            // Determine the business interface and the current anchor
+            TypeMirror businessIface = InterfaceSelector.selectBestInterface(te, env);
+            if (businessIface == null) continue;
+
+            String ifaceName = businessIface.toString();
+            String currentAnchor = LocationResolver.resolveLocation(te);
+
+            if (interfaceToAnchor.containsKey(ifaceName)) {
+                String existingAnchor = interfaceToAnchor.get(ifaceName);
+                if (!existingAnchor.equals(currentAnchor)) {
+                    error(String.format(
+                        "Strategy dispersion detected! Interface [%s] has implementations in both [%s] and [%s]. " +
+                        "All strategies for a single interface must belong to the same anchor.",
+                        ifaceName, existingAnchor, currentAnchor), te);
+                }
+            } else {
+                interfaceToAnchor.put(ifaceName, currentAnchor);
+            }
         }
     }
 

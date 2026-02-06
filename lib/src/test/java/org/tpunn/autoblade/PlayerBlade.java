@@ -7,4 +7,5 @@ public interface PlayerBlade {
     ScoreManager score();
     PlayerBadgeMachine badgeFactory();
     PlayerBadgeBuilder badgeBuilder();
+    ActionStrategyResolver actions();
 }

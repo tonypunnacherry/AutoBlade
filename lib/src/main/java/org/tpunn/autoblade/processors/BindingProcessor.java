@@ -65,6 +65,7 @@ public class BindingProcessor extends AbstractProcessor {
                 .addModifiers(Modifier.PUBLIC)
                 .addAnnotation(moduleAnno.build());
 
+        // Repository Bindings
         for (TypeElement repo : repos) {
             TypeName contractType = TypeName.get(repo.asType());
             if (repo.getKind() == ElementKind.CLASS && !repo.getInterfaces().isEmpty()) {
@@ -89,17 +90,49 @@ public class BindingProcessor extends AbstractProcessor {
                     .returns(TypeName.get(iface))
                     .addParameter(TypeName.get(te.asType()), "impl");
 
+            // 1. Handle Strategy-specific annotations
+            Optional<? extends AnnotationMirror> strategyMirror = getStrategyMirror(te);
+            if (strategyMirror.isPresent()) {
+                mb.addAnnotation(ClassName.get("dagger.multibindings", "IntoMap"));
+                
+                AnnotationMirror mirror = strategyMirror.get();
+                if (mirror == null || mirror.getAnnotationType() == null || mirror.getAnnotationType().asElement() == null) {
+                    continue; // Defensive check
+                }
+                String keyClassName = mirror.getAnnotationType().asElement().getSimpleName() + "Key";
+                
+                // Extract Enum constant safely for ActionType.JUMP
+                AnnotationValue enumVal = mirror.getElementValues().values().iterator().next();
+                if (enumVal == null) continue; // Defensive check
+                if (enumVal.getValue() instanceof VariableElement enumConstant) {
+                    mb.addAnnotation(AnnotationSpec.builder(ClassName.get(pkg, keyClassName))
+                            .addMember("value", "$T.$L", TypeName.get(enumConstant.asType()), enumConstant.getSimpleName())
+                            .build());
+                }
+            }
+
+            // 2. UNIFIED SCOPING: Add the anchor scope exactly once if not transient
             if (!hasMirror(te, "org.tpunn.autoblade.annotations.Transient")) {
                 String scopeName = LocationResolver.resolveAnchorName(te);
-                mb.addAnnotation("Singleton".equals(scopeName) ? 
-                    ClassName.get("javax.inject", "Singleton") : ClassName.get(pkg, scopeName));
+                ClassName scopeAnno = "Singleton".equals(scopeName) 
+                        ? ClassName.get("javax.inject", "Singleton") 
+                        : ClassName.get(pkg, scopeName);
+                
+                mb.addAnnotation(scopeAnno);
             }
+
             mod.addMethod(mb.build());
         }
 
         try {
             JavaFile.builder(pkg, mod.build()).build().writeTo(processingEnv.getFiler());
         } catch (IOException ignored) {}
+    }
+
+    private Optional<? extends AnnotationMirror> getStrategyMirror(TypeElement te) {
+        return te.getAnnotationMirrors().stream()
+                .filter(m -> m != null && m.getAnnotationType().asElement().getAnnotation(Strategy.class) != null)
+                .findFirst();
     }
 
     private boolean hasMirror(TypeElement te, String fq) {

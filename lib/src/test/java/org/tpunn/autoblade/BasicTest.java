@@ -2,11 +2,34 @@ package org.tpunn.autoblade;
 
 import static org.junit.Assert.assertEquals;
 
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
 import java.util.UUID;
 
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 
 public class BasicTest {
+    private String lastLine;
+    private final PrintStream originalOut = System.out;
+
+    @Before
+    public void setUp() {
+        System.setOut(new PrintStream(new ByteArrayOutputStream()) {
+            @Override
+            public void println(String s) {
+                lastLine = s;
+                originalOut.println(s); // Optional: still print to real console
+            }
+        });
+    }
+
+    @After
+    public void tearDown() {
+        System.setOut(originalOut);
+    }
+
     @Test
     public void test() {
         AppBlade app = AutoBladeApp.start();
@@ -39,5 +62,18 @@ public class BasicTest {
         // Test builder
         PlayerBadge badge2 = player.badgeBuilder().name("All-Star").build();
         assertEquals("All-Star for Tony", badge2.getName());
+
+        // Test strategy
+        player.actions().resolve(ActionType.JUMP).act();
+        assertEquals("Jumping for Tony! Jump count: 1", lastLine);
+        player.actions().resolve(ActionType.JUMP).act();
+        assertEquals("Jumping for Tony! Jump count: 2", lastLine);
+        player.actions().resolve(ActionType.JUMP).act();
+        assertEquals("Jumping for Tony! Jump count: 3", lastLine);
+
+        player.actions().resolve(ActionType.SIT).act();
+        assertEquals("Sitting for Tony! Sitting: true", lastLine);
+        player.actions().resolve(ActionType.SIT).act();
+        assertEquals("Sitting for Tony! Sitting: false", lastLine);
     }
 }
