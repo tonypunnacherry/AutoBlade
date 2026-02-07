@@ -56,7 +56,10 @@ public class StrategyProcessor extends AbstractProcessor {
     }
 
     private void generateResolver(String pkg, String className, TypeName enumType, TypeName interfaceType) {
+        // TODO: Determine if we are using a shared interface based on a factory or builder pattern, and if so generate that interface
+
         TypeName providerType = ParameterizedTypeName.get(ClassName.get("javax.inject", "Provider"), interfaceType);
+        // TODO: If using strategy/builder+factory pattern, the provider type should be replaced with the shared Factory/Builder interface
         TypeName mapType = ParameterizedTypeName.get(ClassName.get("java.util", "Map"), enumType, providerType);
 
         TypeSpec resolver = TypeSpec.classBuilder(className)

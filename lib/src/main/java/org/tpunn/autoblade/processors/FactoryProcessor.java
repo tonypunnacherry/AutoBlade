@@ -21,17 +21,17 @@ public class FactoryProcessor extends AbstractProcessor {
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
         Set<TypeElement> factories = FileCollector.collectManaged(roundEnv, Set.of(AutoFactory.class, AutoBuilder.class));
-        for (Element element : factories) {
-            String factoryName = FactoryNaming.resolveName((TypeElement) element, processingEnv, "org.tpunn.autoblade.annotations.AutoFactory", "Factory");
+        for (TypeElement element : factories) {
+            String factoryName = FactoryNaming.resolveName(element, processingEnv, "org.tpunn.autoblade.annotations.AutoFactory", "Factory");
             if (factoryName == null) {
-                factoryName = FactoryNaming.resolveName((TypeElement) element, processingEnv, "?", "Factory");
+                factoryName = FactoryNaming.resolveName(element, processingEnv, "?", "Factory");
             }
-            String builderName = FactoryNaming.resolveName((TypeElement) element, processingEnv, "org.tpunn.autoblade.annotations.AutoBuilder", "Builder");
-            generateFactory((TypeElement) element, factoryName);
+            String builderName = FactoryNaming.resolveName(element, processingEnv, "org.tpunn.autoblade.annotations.AutoBuilder", "Builder");
+            generateFactory(element, factoryName);
             System.out.println("Generated Factory: " + factoryName);
             System.out.println("Generated Builder: " + builderName);
             if (builderName != null) {
-                generateBuilder((TypeElement) element, builderName, factoryName);
+                generateBuilder(element, builderName, factoryName);
             }
         }
         return true;
@@ -52,6 +52,7 @@ public class FactoryProcessor extends AbstractProcessor {
             }
         }
 
+        // TODO: If there is a strategy, extend the shared interface
         TypeSpec factoryInterface = TypeSpec.interfaceBuilder(factoryName)
                 .addModifiers(Modifier.PUBLIC)
                 .addAnnotation(AssistedFactory.class)
@@ -67,6 +68,7 @@ public class FactoryProcessor extends AbstractProcessor {
         ClassName factoryClass = ClassName.get(pkg, factoryName);
         TypeMirror returnType = InterfaceSelector.selectBestInterface(type, processingEnv);
 
+        // TODO: If there is a strategy, extend the shared interface
         TypeSpec.Builder builder = TypeSpec.classBuilder(builderName)
                 .addModifiers(Modifier.PUBLIC);
 

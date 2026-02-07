@@ -105,6 +105,8 @@ public class Validator {
         Map<String, String> interfaceToAnchor = new java.util.HashMap<>();
 
         // We scan for all classes that are implementations of a Strategy
+        // TODO: Implement "all or nothing" validation for strategy factory/builder (so mix/match)
+        // TODO: Implement a consistent parameter set for all factories/builders under a strategy
         for (Element e : roundEnv.getElementsAnnotatedWithAny(Set.of(Scoped.class, Transient.class))) {
             if (!(e instanceof TypeElement te)) continue;
 

@@ -109,9 +109,11 @@ public class BindingProcessor extends AbstractProcessor {
                             .addMember("value", "$T.$L", TypeName.get(enumConstant.asType()), enumConstant.getSimpleName())
                             .build());
                 }
+                // TODO: Update to bind factories + builders that execute on a strategy using the shared strategy interface
             }
 
             // 2. UNIFIED SCOPING: Add the anchor scope exactly once if not transient
+            // TODO: Update to skip regular binding on factories + builders
             if (!hasMirror(te, "org.tpunn.autoblade.annotations.Transient")) {
                 String scopeName = LocationResolver.resolveAnchorName(te);
                 ClassName scopeAnno = "Singleton".equals(scopeName) 
