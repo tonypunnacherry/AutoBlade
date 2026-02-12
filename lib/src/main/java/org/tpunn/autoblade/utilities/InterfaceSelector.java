@@ -2,6 +2,9 @@ package org.tpunn.autoblade.utilities;
 
 import org.tpunn.autoblade.annotations.Interface;
 
+import com.squareup.javapoet.ClassName;
+import com.squareup.javapoet.TypeName;
+
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.*;
 import javax.lang.model.type.TypeMirror;
@@ -85,5 +88,19 @@ public final class InterfaceSelector {
         if (s.endsWith("Implementation")) s = s.substring(0, s.length() - "Implementation".length());
         if (s.endsWith("Default")) s = s.substring(0, s.length() - "Default".length());
         return s;
+    }
+
+    public static TypeName selectBuilderInterface(String pkg, TypeMirror iface, TypeElement impl, ProcessingEnvironment env) {
+        // For builders, resolve the builder name
+        String builderInterfaceName = FactoryNaming.resolveName(iface, impl, env, "org.tpunn.autoblade.annotations.AutoBuilder", "Builder");
+        if (builderInterfaceName == null) return null;
+        return ClassName.get(pkg, builderInterfaceName);
+    }
+
+    public static TypeName selectFactoryInterface(String pkg, TypeMirror iface, TypeElement impl, ProcessingEnvironment env) {
+        // For factories, resolve the factory name
+        String factoryInterfaceName = FactoryNaming.resolveName(iface, impl, env, "org.tpunn.autoblade.annotations.AutoFactory", "Factory");
+        if (factoryInterfaceName == null) return null;
+        return ClassName.get(pkg, factoryInterfaceName);
     }
 }

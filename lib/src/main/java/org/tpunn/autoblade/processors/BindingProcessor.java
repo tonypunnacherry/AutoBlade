@@ -4,7 +4,10 @@ import com.squareup.javapoet.*;
 import org.tpunn.autoblade.annotations.*;
 import org.tpunn.autoblade.utilities.*;
 import javax.annotation.processing.*;
+import javax.inject.Singleton;
 import javax.lang.model.element.*;
+import javax.lang.model.type.TypeMirror;
+
 import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -15,7 +18,7 @@ public class BindingProcessor extends AbstractProcessor {
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
         if (roundEnv.processingOver()) return false;
 
-        Set<TypeElement> svcs = FileCollector.collectManaged(roundEnv, Arrays.asList(Transient.class, Scoped.class));
+        Set<TypeElement> svcs = FileCollector.collectManaged(roundEnv, Arrays.asList(Transient.class, Scoped.class, Singleton.class, AutoBuilder.class));
         Set<TypeElement> repos = FileCollector.collectManaged(roundEnv, Repository.class);
         Set<TypeElement> contracts = FileCollector.collectManaged(roundEnv, Blade.class);
 
@@ -81,17 +84,29 @@ public class BindingProcessor extends AbstractProcessor {
         }
 
         for (TypeElement te : svcs) {
-            var iface = InterfaceSelector.selectBestInterface(te, processingEnv);
-            if (iface == null || processingEnv.getTypeUtils().isSameType(iface, te.asType())) continue;
+            TypeMirror ifaceMirror = InterfaceSelector.selectBestInterface(te, processingEnv);
+            if (ifaceMirror == null) continue;
+            TypeName iface = TypeName.get(ifaceMirror);
+            TypeName impl = TypeName.get(te.asType());
 
+            if (BindingUtils.hasMirror(te, "org.tpunn.autoblade.annotations.AutoBuilder")) {
+                iface = InterfaceSelector.selectBuilderInterface(pkg, ifaceMirror, te, processingEnv); // The Builder interface
+                impl = InterfaceSelector.selectBuilderInterface(pkg, te.asType(), te, processingEnv); // The generated Builder impl
+            }
+
+            if (iface == null || iface.equals(impl)) continue;
+            
+            System.out.println("Binding " + impl + " to " + iface + " in anchor: " + anchor);
+            
             MethodSpec.Builder mb = MethodSpec.methodBuilder("bind" + te.getSimpleName())
                     .addAnnotation(ClassName.get("dagger", "Binds"))
                     .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
-                    .returns(TypeName.get(iface))
-                    .addParameter(TypeName.get(te.asType()), "impl");
+                    .returns(iface)
+                    .addParameter(impl, "impl");
+
+            Optional<? extends AnnotationMirror> strategyMirror = BindingUtils.getStrategyMirror(te);
 
             // 1. Handle Strategy-specific annotations
-            Optional<? extends AnnotationMirror> strategyMirror = getStrategyMirror(te);
             if (strategyMirror.isPresent()) {
                 mb.addAnnotation(ClassName.get("dagger.multibindings", "IntoMap"));
                 
@@ -101,7 +116,7 @@ public class BindingProcessor extends AbstractProcessor {
                 }
                 String keyClassName = mirror.getAnnotationType().asElement().getSimpleName() + "Key";
                 
-                // Extract Enum constant safely for ActionType.JUMP
+                // Extract Enum constant safely
                 AnnotationValue enumVal = mirror.getElementValues().values().iterator().next();
                 if (enumVal == null) continue; // Defensive check
                 if (enumVal.getValue() instanceof VariableElement enumConstant) {
@@ -109,12 +124,10 @@ public class BindingProcessor extends AbstractProcessor {
                             .addMember("value", "$T.$L", TypeName.get(enumConstant.asType()), enumConstant.getSimpleName())
                             .build());
                 }
-                // TODO: Update to bind factories + builders that execute on a strategy using the shared strategy interface
             }
 
             // 2. UNIFIED SCOPING: Add the anchor scope exactly once if not transient
-            // TODO: Update to skip regular binding on factories + builders
-            if (!hasMirror(te, "org.tpunn.autoblade.annotations.Transient")) {
+            if (!BindingUtils.hasMirror(te, "org.tpunn.autoblade.annotations.Transient")) {
                 String scopeName = LocationResolver.resolveAnchorName(te);
                 ClassName scopeAnno = "Singleton".equals(scopeName) 
                         ? ClassName.get("javax.inject", "Singleton") 
@@ -129,16 +142,5 @@ public class BindingProcessor extends AbstractProcessor {
         try {
             JavaFile.builder(pkg, mod.build()).build().writeTo(processingEnv.getFiler());
         } catch (IOException ignored) {}
-    }
-
-    private Optional<? extends AnnotationMirror> getStrategyMirror(TypeElement te) {
-        return te.getAnnotationMirrors().stream()
-                .filter(m -> m != null && m.getAnnotationType().asElement().getAnnotation(Strategy.class) != null)
-                .findFirst();
-    }
-
-    private boolean hasMirror(TypeElement te, String fq) {
-        return te.getAnnotationMirrors().stream()
-                .anyMatch(m -> m != null && ((TypeElement)m.getAnnotationType().asElement()).getQualifiedName().contentEquals(fq));
     }
 }

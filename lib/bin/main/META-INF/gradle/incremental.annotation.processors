@@ -1,0 +1,6 @@
+org.tpunn.autoblade.processors.ScopeProcessor:ISOLATING
+org.tpunn.autoblade.processors.AnchorProcessor:ISOLATING
+org.tpunn.autoblade.processors.BindingProcessor:ISOLATING
+org.tpunn.autoblade.processors.EntryPointProcessor:AGGREGATING
+org.tpunn.autoblade.processors.ValidatorProcessor:AGGREGATING
+org.tpunn.autoblade.processors.SeedProcessor:ISOLATING

@@ -75,5 +75,8 @@ public class BasicTest {
         assertEquals("Sitting for Tony! Sitting: true", lastLine);
         player.actions().resolve(ActionType.SIT).act();
         assertEquals("Sitting for Tony! Sitting: false", lastLine);
+
+        player.messages().resolve(MessageType.EMAIL).message("Hello Tony!").build().send();
+        assertEquals("Sending email... Hello Tony!", lastLine);
     }
 }

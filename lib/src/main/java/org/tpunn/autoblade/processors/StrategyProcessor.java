@@ -2,6 +2,7 @@ package org.tpunn.autoblade.processors;
 
 import com.squareup.javapoet.*;
 import org.tpunn.autoblade.annotations.Strategy;
+import org.tpunn.autoblade.utilities.BindingUtils;
 import org.tpunn.autoblade.utilities.GeneratedPackageResolver;
 import org.tpunn.autoblade.utilities.InterfaceSelector;
 
@@ -46,7 +47,7 @@ public class StrategyProcessor extends AbstractProcessor {
                     .ifPresent(te -> {
                         TypeMirror iface = InterfaceSelector.selectBestInterface(te, processingEnv);
                         if (iface != null) {
-                            generateResolver(pkg, annoName + "Resolver", enumType, TypeName.get(iface));
+                            generateResolver(te, pkg, annoName + "Resolver", enumType, TypeName.get(iface));
                         }
                     });
 
@@ -55,11 +56,16 @@ public class StrategyProcessor extends AbstractProcessor {
         return false;
     }
 
-    private void generateResolver(String pkg, String className, TypeName enumType, TypeName interfaceType) {
-        // TODO: Determine if we are using a shared interface based on a factory or builder pattern, and if so generate that interface
-
+    private void generateResolver(TypeElement te, String pkg, String className, TypeName enumType, TypeName ifaceName) {
+        TypeName interfaceType = ifaceName;
+        if (BindingUtils.hasMirror(te, "org.tpunn.autoblade.annotations.AutoBuilder")) {
+            // Load builder type
+            interfaceType = InterfaceSelector.selectBuilderInterface(pkg, InterfaceSelector.selectBestInterface(te, processingEnv), te, processingEnv);
+        } else if (BindingUtils.hasMirror(te, "org.tpunn.autoblade.annotations.AutoFactory")) {
+            // Load factory type
+            interfaceType = InterfaceSelector.selectFactoryInterface(pkg, InterfaceSelector.selectBestInterface(te, processingEnv), te, processingEnv);
+        }
         TypeName providerType = ParameterizedTypeName.get(ClassName.get("javax.inject", "Provider"), interfaceType);
-        // TODO: If using strategy/builder+factory pattern, the provider type should be replaced with the shared Factory/Builder interface
         TypeName mapType = ParameterizedTypeName.get(ClassName.get("java.util", "Map"), enumType, providerType);
 
         TypeSpec resolver = TypeSpec.classBuilder(className)

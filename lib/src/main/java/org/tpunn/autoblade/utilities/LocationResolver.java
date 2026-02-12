@@ -30,7 +30,7 @@ public final class LocationResolver {
             }
 
             // Standard JSR-330 Singleton defaults to App
-            if (fq.equals("javax.inject.Singleton") || fq.equals("jakarta.inject.Singleton")) {
+            if (fq.equals("javax.inject.Singleton")) {
                 return DEFAULT_LOCATION;
             }
         }

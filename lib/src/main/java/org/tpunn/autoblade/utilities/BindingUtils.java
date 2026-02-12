@@ -3,6 +3,9 @@ package org.tpunn.autoblade.utilities;
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.TypeName;
 import org.tpunn.autoblade.annotations.Id;
+import org.tpunn.autoblade.annotations.Strategy;
+
+import java.util.Optional;
 
 import javax.lang.model.element.*;
 import javax.lang.model.type.DeclaredType;
@@ -102,5 +105,16 @@ public final class BindingUtils {
                 .map(BindingUtils::parseBladeName)
                 .findFirst()
                 .orElse("Unknown");
+    }
+
+    public static Optional<? extends AnnotationMirror> getStrategyMirror(TypeElement te) {
+        return te.getAnnotationMirrors().stream()
+                .filter(m -> m != null && m.getAnnotationType().asElement().getAnnotation(Strategy.class) != null)
+                .findFirst();
+    }
+
+    public static boolean hasMirror(TypeElement te, String fq) {
+        return te.getAnnotationMirrors().stream()
+                .anyMatch(m -> m != null && ((TypeElement)m.getAnnotationType().asElement()).getQualifiedName().contentEquals(fq));
     }
 }

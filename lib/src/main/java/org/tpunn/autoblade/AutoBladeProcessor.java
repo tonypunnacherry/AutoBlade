@@ -20,8 +20,9 @@ import java.util.*;
     "org.tpunn.autoblade.annotations.Scoped",
     "org.tpunn.autoblade.annotations.Transient",
     "org.tpunn.autoblade.annotations.Anchored",
-    "org.tpunn.autoblade.annotations.Factory",
-    "org.tpunn.autoblade.annotations.Builder"
+    "org.tpunn.autoblade.annotations.AutoFactory",
+    "org.tpunn.autoblade.annotations.AutoBuilder",
+    "javax.inject.Singleton"
 })
 public class AutoBladeProcessor extends AbstractProcessor {
 

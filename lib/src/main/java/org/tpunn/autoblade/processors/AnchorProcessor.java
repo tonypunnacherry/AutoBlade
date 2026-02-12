@@ -38,9 +38,14 @@ public class AnchorProcessor extends AbstractProcessor {
 
         for (TypeElement service : anchoredServices) {
             String loc = LocationResolver.resolveLocation(service);
-            if (loc == null || loc.isEmpty() || "App".equals(loc)) {
+            if (loc == null || loc.isEmpty()) {
                 processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, 
                     "AutoBlade: @Anchored must specify a non-empty string key.", service);
+                continue;
+            }
+            if ("App".equals(loc)) {
+                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, 
+                    "AutoBlade: @Anchored with 'App' value is reserved for the root scope.", service);
                 continue;
             }
             String prefix = NamingUtils.toPascalCase(loc);
