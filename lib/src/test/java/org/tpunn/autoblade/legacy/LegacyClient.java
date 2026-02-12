@@ -1,4 +1,4 @@
-package org.tpunn.autoblade;
+package org.tpunn.autoblade.legacy;
 
 public class LegacyClient {
     private final String url;

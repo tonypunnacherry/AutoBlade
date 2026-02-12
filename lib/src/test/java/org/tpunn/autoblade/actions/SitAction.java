@@ -1,9 +1,11 @@
-package org.tpunn.autoblade;
+package org.tpunn.autoblade.actions;
 
 import javax.inject.Inject;
 
+import org.tpunn.autoblade.PlayerData;
 import org.tpunn.autoblade.annotations.Anchored;
 import org.tpunn.autoblade.annotations.Scoped;
+import org.tpunn.autoblade.core.Anchor;
 
 @ActionStrategy(ActionType.SIT)
 @Scoped

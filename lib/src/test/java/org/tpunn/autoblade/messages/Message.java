@@ -1,4 +1,4 @@
-package org.tpunn.autoblade;
+package org.tpunn.autoblade.messages;
 
 public interface Message {
     void send();

@@ -1,4 +1,4 @@
-package org.tpunn.autoblade;
+package org.tpunn.autoblade.scores;
 
 public interface ScoreManager {
     int get();

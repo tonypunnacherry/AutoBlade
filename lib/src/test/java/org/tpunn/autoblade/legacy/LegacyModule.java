@@ -1,4 +1,4 @@
-package org.tpunn.autoblade;
+package org.tpunn.autoblade.legacy;
 
 import dagger.Module;
 import dagger.Provides;

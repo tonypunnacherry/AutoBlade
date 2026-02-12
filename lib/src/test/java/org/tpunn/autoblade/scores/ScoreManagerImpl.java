@@ -1,9 +1,10 @@
-package org.tpunn.autoblade;
+package org.tpunn.autoblade.scores;
 
 import javax.inject.Inject;
 
 import org.tpunn.autoblade.annotations.Anchored;
 import org.tpunn.autoblade.annotations.Scoped;
+import org.tpunn.autoblade.core.Anchor;
 
 @Scoped
 @Anchored(Anchor.PLAYER)

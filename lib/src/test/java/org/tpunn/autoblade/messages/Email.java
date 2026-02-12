@@ -1,7 +1,8 @@
-package org.tpunn.autoblade;
+package org.tpunn.autoblade.messages;
 
 import org.tpunn.autoblade.annotations.Anchored;
 import org.tpunn.autoblade.annotations.AutoFactory;
+import org.tpunn.autoblade.core.Anchor;
 
 import dagger.assisted.Assisted;
 import dagger.assisted.AssistedInject;

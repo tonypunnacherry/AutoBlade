@@ -1,4 +1,4 @@
-package org.tpunn.autoblade;
+package org.tpunn.autoblade.messages;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -8,11 +8,11 @@ import java.lang.annotation.Target;
 import org.tpunn.autoblade.annotations.Strategy;
 
 /**
- * Choose a strategy for taking "player actions"
+ * Choose a strategy for sending "player messages"
  */
 @Strategy
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.SOURCE)
-public @interface ActionStrategy {
-    ActionType value();
+public @interface MessageStrategy {
+    MessageType value();
 }
