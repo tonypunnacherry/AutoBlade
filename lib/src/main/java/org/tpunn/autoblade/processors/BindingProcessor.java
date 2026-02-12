@@ -18,7 +18,7 @@ public class BindingProcessor extends AbstractProcessor {
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
         if (roundEnv.processingOver()) return false;
 
-        Set<TypeElement> svcs = FileCollector.collectManaged(roundEnv, Arrays.asList(Transient.class, Scoped.class, Singleton.class, AutoBuilder.class));
+        Set<TypeElement> svcs = FileCollector.collectManaged(roundEnv, Arrays.asList(Transient.class, Scoped.class, Singleton.class, AutoBuilder.class, AutoFactory.class));
         Set<TypeElement> repos = FileCollector.collectManaged(roundEnv, Repository.class);
         Set<TypeElement> contracts = FileCollector.collectManaged(roundEnv, Blade.class);
 
@@ -88,10 +88,16 @@ public class BindingProcessor extends AbstractProcessor {
             if (ifaceMirror == null) continue;
             TypeName iface = TypeName.get(ifaceMirror);
             TypeName impl = TypeName.get(te.asType());
+            
+            Optional<? extends AnnotationMirror> strategyMirror = BindingUtils.getStrategyMirror(te);
 
             if (BindingUtils.hasMirror(te, "org.tpunn.autoblade.annotations.AutoBuilder")) {
                 iface = InterfaceSelector.selectBuilderInterface(pkg, ifaceMirror, te, processingEnv); // The Builder interface
-                impl = InterfaceSelector.selectBuilderInterface(pkg, te.asType(), te, processingEnv); // The generated Builder impl
+                impl = InterfaceSelector.selectBuilderImpl(pkg, te, processingEnv); // The generated Builder impl
+            } else if (BindingUtils.hasMirror(te, "org.tpunn.autoblade.annotations.AutoFactory")) {
+                if (strategyMirror.isEmpty()) continue;
+                iface = InterfaceSelector.selectFactoryInterface(pkg, ifaceMirror, te, processingEnv); // The Factory interface
+                impl = InterfaceSelector.selectFactoryImpl(pkg, te, processingEnv); // The generated Factory impl
             }
 
             if (iface == null || iface.equals(impl)) continue;
@@ -103,8 +109,6 @@ public class BindingProcessor extends AbstractProcessor {
                     .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
                     .returns(iface)
                     .addParameter(impl, "impl");
-
-            Optional<? extends AnnotationMirror> strategyMirror = BindingUtils.getStrategyMirror(te);
 
             // 1. Handle Strategy-specific annotations
             if (strategyMirror.isPresent()) {

@@ -92,15 +92,29 @@ public final class InterfaceSelector {
 
     public static TypeName selectBuilderInterface(String pkg, TypeMirror iface, TypeElement impl, ProcessingEnvironment env) {
         // For builders, resolve the builder name
-        String builderInterfaceName = FactoryNaming.resolveName(iface, impl, env, "org.tpunn.autoblade.annotations.AutoBuilder", "Builder");
+        String builderInterfaceName = FactoryNaming.resolveName(iface, impl, env, "?", "Builder");
+        if (builderInterfaceName == null) return null;
+        return ClassName.get(pkg, builderInterfaceName);
+    }
+
+    public static TypeName selectBuilderImpl(String pkg, TypeElement impl, ProcessingEnvironment env) {
+        // For builders, resolve the builder name
+        String builderInterfaceName = FactoryNaming.resolveName(impl.asType(), impl, env, "org.tpunn.autoblade.annotations.AutoBuilder", "Builder");
         if (builderInterfaceName == null) return null;
         return ClassName.get(pkg, builderInterfaceName);
     }
 
     public static TypeName selectFactoryInterface(String pkg, TypeMirror iface, TypeElement impl, ProcessingEnvironment env) {
         // For factories, resolve the factory name
-        String factoryInterfaceName = FactoryNaming.resolveName(iface, impl, env, "org.tpunn.autoblade.annotations.AutoFactory", "Factory");
+        String factoryInterfaceName = FactoryNaming.resolveName(iface, impl, env, "?", "Factory");
         if (factoryInterfaceName == null) return null;
         return ClassName.get(pkg, factoryInterfaceName);
+    }
+
+    public static TypeName selectFactoryImpl(String pkg, TypeElement impl, ProcessingEnvironment env) {
+        // For builders, resolve the builder name
+        String builderInterfaceName = FactoryNaming.resolveName(impl.asType(), impl, env, "org.tpunn.autoblade.annotations.AutoFactory", "Factory");
+        if (builderInterfaceName == null) return null;
+        return ClassName.get(pkg, builderInterfaceName);
     }
 }

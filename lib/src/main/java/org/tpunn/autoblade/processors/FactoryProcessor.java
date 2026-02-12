@@ -56,6 +56,8 @@ public class FactoryProcessor extends AbstractProcessor {
         Optional<? extends AnnotationMirror> strategy = BindingUtils.getStrategyMirror(type);
         TypeSpec factorySharedInterface;
         if (strategy.isPresent()) {
+            // Force fallback
+            factoryName = FactoryNaming.resolveName(type, processingEnv, "?", "Factory");
             factorySharedInterface = TypeSpec.interfaceBuilder(factoryName)
                     .addModifiers(Modifier.PUBLIC)
                     .addMethod(createMethod.build())

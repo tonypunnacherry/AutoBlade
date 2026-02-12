@@ -1,13 +1,13 @@
 package org.tpunn.autoblade;
 
 import org.tpunn.autoblade.annotations.Anchored;
-import org.tpunn.autoblade.annotations.AutoBuilder;
+import org.tpunn.autoblade.annotations.AutoFactory;
 
 import dagger.assisted.Assisted;
 import dagger.assisted.AssistedInject;
 
 @MessageStrategy(MessageType.EMAIL)
-@AutoBuilder
+@AutoFactory(named = "EmailMessageGenerator")
 @Anchored(Anchor.PLAYER)
 public class Email implements Message {
     private String message;

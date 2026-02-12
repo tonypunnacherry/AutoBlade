@@ -28,6 +28,11 @@ public final class FactoryNaming {
 
         // 3. Extract from AnnotationMirror if present
         return element.getAnnotationMirrors().stream()
+                .filter(mirror -> {
+                    if (mirror == null) return false;
+                    String mirrorFq = mirror.getAnnotationType().toString();
+                    return mirrorFq.equals(annotationFq);
+                })
                 .findFirst()
                 .map(mirror -> {
                     if (mirror == null) return null;
@@ -46,6 +51,6 @@ public final class FactoryNaming {
                     if (!suffix.isEmpty()) return baseName + suffix;
                     return baseName + fallbackSuffix;
                 })
-                .orElse(null);
+                .orElse(baseName + fallbackSuffix);
     }
 }
