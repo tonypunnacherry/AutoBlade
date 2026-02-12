@@ -4,147 +4,163 @@ import com.squareup.javapoet.*;
 import org.tpunn.autoblade.annotations.*;
 import org.tpunn.autoblade.utilities.*;
 import javax.annotation.processing.*;
-import javax.inject.Singleton;
+import javax.lang.model.SourceVersion;
 import javax.lang.model.element.*;
 import javax.lang.model.type.TypeMirror;
-
 import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
 
+@SupportedSourceVersion(SourceVersion.RELEASE_17)
 public class BindingProcessor extends AbstractProcessor {
 
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
         if (roundEnv.processingOver()) return false;
 
-        Set<TypeElement> svcs = FileCollector.collectManaged(roundEnv, Arrays.asList(Transient.class, Scoped.class, Singleton.class, AutoBuilder.class, AutoFactory.class));
+        // 1. Collect all types
+        Set<TypeElement> svcs = FileCollector.collectManaged(roundEnv, Arrays.asList(
+            Transient.class, Scoped.class, javax.inject.Singleton.class, AutoBuilder.class, AutoFactory.class));
         Set<TypeElement> repos = FileCollector.collectManaged(roundEnv, Repository.class);
         Set<TypeElement> contracts = FileCollector.collectManaged(roundEnv, Blade.class);
 
+        // Filter out Blade contracts from the "bindable services" list to avoid circular dependencies
+        svcs.removeIf(te -> BindingUtils.hasMirror(te, Blade.class.getName()));
+
         if (svcs.isEmpty() && repos.isEmpty() && contracts.isEmpty()) return true;
 
-        Set<TypeElement> allElements = new HashSet<>(svcs);
-        allElements.addAll(repos);
-        allElements.addAll(contracts);
-        
-        String pkg = GeneratedPackageResolver.computeGeneratedPackage(allElements, processingEnv);
-
+        // 2. Grouping
         Map<String, List<TypeElement>> svcsByAnchor = LocationResolver.groupByAnchor(svcs);
         Map<String, List<TypeElement>> reposByAnchor = LocationResolver.groupByAnchor(repos);
 
-        Set<String> allAnchors = new HashSet<>();
-        allAnchors.addAll(svcsByAnchor.keySet());
+        Set<String> allAnchors = new HashSet<>(svcsByAnchor.keySet());
         allAnchors.addAll(reposByAnchor.keySet());
         allAnchors.add("App");
 
         for (String anchor : allAnchors) {
-            generateModule(
-                pkg, 
-                anchor, 
+            generateModule(anchor, 
                 svcsByAnchor.getOrDefault(anchor, Collections.emptyList()), 
                 reposByAnchor.getOrDefault(anchor, Collections.emptyList()), 
-                contracts
-            );
+                contracts);
         }
         return true;
     }
 
-    private void generateModule(String pkg, String anchor, List<TypeElement> svcs, List<TypeElement> repos, Set<TypeElement> contracts) {
-        AnnotationSpec.Builder moduleAnno = AnnotationSpec.builder(ClassName.get("dagger", "Module"));
+    private void generateModule(String anchor, List<TypeElement> svcs, List<TypeElement> repos, Set<TypeElement> contracts) {
+        TypeElement owner = contracts.stream()
+                .filter(c -> anchor.equalsIgnoreCase(LocationResolver.resolveLocation(c)))
+                .findFirst()
+                .orElse(null);
 
+        // Root/App logic
+        String pkg = (owner != null) 
+                ? GeneratedPackageResolver.getPackage(owner, processingEnv)
+                : GeneratedPackageResolver.computeGeneratedPackage(contracts, processingEnv);
+        
+        // Ensure pkg isn't empty to avoid default package issues
+        if (pkg == null || pkg.isEmpty()) pkg = "org.tpunn.autoblade";
+
+        ClassName moduleCn = ClassName.get(pkg, anchor + "AutoModule");
+        TypeSpec.Builder modBuilder = TypeSpec.interfaceBuilder(moduleCn)
+                .addModifiers(Modifier.PUBLIC)
+                .addAnnotation(ClassName.get("dagger", "Module"));
+
+        // 3. Subcomponents (Only for App Module)
         if ("App".equalsIgnoreCase(anchor)) {
-            List<String> subs = contracts.stream()
+            List<ClassName> subTypes = contracts.stream()
                 .filter(c -> !"App".equalsIgnoreCase(LocationResolver.resolveLocation(c)))
-                .map(c -> LocationResolver.resolveLocation(c) + "Blade_Auto.class")
+                .map(c -> ClassName.get(c).peerClass(LocationResolver.resolveLocation(c) + "Blade_Auto"))
                 .collect(Collectors.toList());
             
-            if (!subs.isEmpty()) {
-                moduleAnno.addMember("subcomponents", "{$L}", String.join(", ", subs));
+            if (!subTypes.isEmpty()) {
+                CodeBlock subList = subTypes.stream()
+                    .map(type -> CodeBlock.of("$T.class", type))
+                    .collect(CodeBlock.joining(", ", "{", "}"));
+                moduleAnno(modBuilder).addMember("subcomponents", subList);
             }
         }
 
-        TypeSpec.Builder mod = TypeSpec.interfaceBuilder(anchor + "AutoModule")
-                .addModifiers(Modifier.PUBLIC)
-                .addAnnotation(moduleAnno.build());
-
-        // Repository Bindings
+        // 4. Repository Bindings
         for (TypeElement repo : repos) {
-            TypeName contractType = TypeName.get(repo.asType());
+            // Find the interface (e.g., TeamRepository)
+            TypeName ifaceType = TypeName.get(repo.asType());
             if (repo.getKind() == ElementKind.CLASS && !repo.getInterfaces().isEmpty()) {
-                contractType = TypeName.get(repo.getInterfaces().get(0));
+                ifaceType = TypeName.get(repo.getInterfaces().get(0));
             }
 
-            mod.addMethod(MethodSpec.methodBuilder("bind" + repo.getSimpleName())
-                    .addAnnotation(ClassName.get("dagger", "Binds"))
-                    .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
-                    .returns(contractType)
-                    .addParameter(ClassName.get(pkg, repo.getSimpleName() + "_Repo"), "impl")
-                    .build());
+            ClassName impl = ClassName.get(repo).peerClass(repo.getSimpleName() + "_Repo");
+            generateBinding(modBuilder, repo, ifaceType, impl, "Repo", Optional.empty(), owner);
         }
 
+        // 5. Services
         for (TypeElement te : svcs) {
-            TypeMirror ifaceMirror = InterfaceSelector.selectBestInterface(te, processingEnv);
-            if (ifaceMirror == null) continue;
-            TypeName iface = TypeName.get(ifaceMirror);
-            TypeName impl = TypeName.get(te.asType());
-            
-            Optional<? extends AnnotationMirror> strategyMirror = BindingUtils.getStrategyMirror(te);
+            ClassName teCn = ClassName.get(te);
+            TypeMirror bestIface = InterfaceSelector.selectBestInterface(te, processingEnv);
+            if (bestIface == null) continue;
 
-            if (BindingUtils.hasMirror(te, "org.tpunn.autoblade.annotations.AutoBuilder")) {
-                iface = InterfaceSelector.selectBuilderInterface(pkg, ifaceMirror, te, processingEnv); // The Builder interface
-                impl = InterfaceSelector.selectBuilderImpl(pkg, te, processingEnv); // The generated Builder impl
-            } else if (BindingUtils.hasMirror(te, "org.tpunn.autoblade.annotations.AutoFactory")) {
-                if (strategyMirror.isEmpty()) continue;
-                iface = InterfaceSelector.selectFactoryInterface(pkg, ifaceMirror, te, processingEnv); // The Factory interface
-                impl = InterfaceSelector.selectFactoryImpl(pkg, te, processingEnv); // The generated Factory impl
+            Optional<? extends AnnotationMirror> strategy = BindingUtils.getStrategyMirror(te);
+            boolean isFactory = BindingUtils.hasMirror(te, AutoFactory.class.getName());
+            boolean isBuilder = BindingUtils.hasMirror(te, AutoBuilder.class.getName());
+
+            if (!isFactory && !isBuilder) {
+                generateBinding(modBuilder, te, TypeName.get(bestIface), TypeName.get(te.asType()), "", strategy, owner);
             }
 
-            if (iface == null || iface.equals(impl)) continue;
-            
-            System.out.println("Binding " + impl + " to " + iface + " in anchor: " + anchor);
-            
-            MethodSpec.Builder mb = MethodSpec.methodBuilder("bind" + te.getSimpleName())
-                    .addAnnotation(ClassName.get("dagger", "Binds"))
-                    .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
-                    .returns(iface)
-                    .addParameter(impl, "impl");
-
-            // 1. Handle Strategy-specific annotations
-            if (strategyMirror.isPresent()) {
-                mb.addAnnotation(ClassName.get("dagger.multibindings", "IntoMap"));
-                
-                AnnotationMirror mirror = strategyMirror.get();
-                if (mirror == null || mirror.getAnnotationType() == null || mirror.getAnnotationType().asElement() == null) {
-                    continue; // Defensive check
-                }
-                String keyClassName = mirror.getAnnotationType().asElement().getSimpleName() + "Key";
-                
-                // Extract Enum constant safely
-                AnnotationValue enumVal = mirror.getElementValues().values().iterator().next();
-                if (enumVal == null) continue; // Defensive check
-                if (enumVal.getValue() instanceof VariableElement enumConstant) {
-                    mb.addAnnotation(AnnotationSpec.builder(ClassName.get(pkg, keyClassName))
-                            .addMember("value", "$T.$L", TypeName.get(enumConstant.asType()), enumConstant.getSimpleName())
-                            .build());
+            if (isFactory) {
+                String shared = FactoryNaming.resolveName(te, processingEnv, strategy.isPresent() ? "?" : AutoFactory.class.getName(), "Factory");
+                String actual = FactoryNaming.resolveName(te, processingEnv, AutoFactory.class.getName(), "Factory");
+                if (shared != null && actual != null && (!shared.equals(actual) || strategy.isPresent())) {
+                    generateBinding(modBuilder, te, teCn.peerClass(shared), teCn.peerClass(actual), "Factory", strategy, owner);
                 }
             }
 
-            // 2. UNIFIED SCOPING: Add the anchor scope exactly once if not transient
-            if (!BindingUtils.hasMirror(te, "org.tpunn.autoblade.annotations.Transient")) {
-                String scopeName = LocationResolver.resolveAnchorName(te);
-                ClassName scopeAnno = "Singleton".equals(scopeName) 
-                        ? ClassName.get("javax.inject", "Singleton") 
-                        : ClassName.get(pkg, scopeName);
-                
-                mb.addAnnotation(scopeAnno);
+            if (isBuilder) {
+                String shared = FactoryNaming.resolveName(te, processingEnv, AutoBuilder.class.getName(), "Builder");
+                if (shared != null) {
+                    generateBinding(modBuilder, te, teCn.peerClass(shared), teCn.peerClass(shared + "Impl"), "Builder", Optional.empty(), owner);
+                }
             }
-
-            mod.addMethod(mb.build());
         }
 
         try {
-            JavaFile.builder(pkg, mod.build()).build().writeTo(processingEnv.getFiler());
+            JavaFile.builder(pkg, modBuilder.build()).skipJavaLangImports(true).build().writeTo(processingEnv.getFiler());
+        } catch (FilerException ignored) {
+            // This prevents duplicate file creation errors across rounds
         } catch (IOException ignored) {}
+    }
+
+    private void generateBinding(TypeSpec.Builder mod, TypeElement origin, TypeName iface, TypeName impl, 
+                                 String suffix, Optional<? extends AnnotationMirror> strategy, TypeElement owner) {
+        if (iface.equals(impl) && suffix.isEmpty()) return;
+
+        MethodSpec.Builder mb = MethodSpec.methodBuilder("bind" + origin.getSimpleName() + suffix)
+                .addAnnotation(ClassName.get("dagger", "Binds"))
+                .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
+                .returns(iface)
+                .addParameter(impl, "impl");
+
+        if (strategy.isPresent()) {
+            mb.addAnnotation(ClassName.get("dagger.multibindings", "IntoMap"));
+            TypeElement keyDef = (TypeElement) strategy.get().getAnnotationType().asElement();
+            AnnotationValue enumVal = strategy.get().getElementValues().values().iterator().next();
+            mb.addAnnotation(AnnotationSpec.builder(ClassName.get(keyDef).peerClass(keyDef.getSimpleName() + "Key"))
+                    .addMember("value", "$T.$L", TypeName.get(((VariableElement)enumVal.getValue()).asType()), 
+                            ((VariableElement)enumVal.getValue()).getSimpleName())
+                    .build());
+        }
+
+        String rawLoc = LocationResolver.resolveLocation(origin);
+        if (!BindingUtils.hasMirror(origin, Transient.class.getName())) {
+            if ("App".equalsIgnoreCase(rawLoc) || "Singleton".equalsIgnoreCase(rawLoc)) {
+                mb.addAnnotation(ClassName.get("javax.inject", "Singleton"));
+            } else if (owner != null) {
+                mb.addAnnotation(ClassName.get(owner).peerClass("Auto" + NamingUtils.toPascalCase(rawLoc) + "Anchor"));
+            }
+        }
+        mod.addMethod(mb.build());
+    }
+
+    private AnnotationSpec.Builder moduleAnno(TypeSpec.Builder mod) {
+        return AnnotationSpec.builder(ClassName.get("dagger", "Module"));
     }
 }

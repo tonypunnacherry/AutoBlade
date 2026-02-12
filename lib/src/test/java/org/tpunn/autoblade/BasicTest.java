@@ -9,6 +9,10 @@ import java.util.UUID;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.tpunn.autoblade.actions.ActionType;
+import org.tpunn.autoblade.badges.PlayerBadge;
+import org.tpunn.autoblade.messages.MessageType;
+import org.tpunn.autoblade.scores.ScoreManager;
 
 public class BasicTest {
     private String lastLine;

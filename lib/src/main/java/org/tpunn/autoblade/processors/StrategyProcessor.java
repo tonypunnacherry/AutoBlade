@@ -3,15 +3,17 @@ package org.tpunn.autoblade.processors;
 import com.squareup.javapoet.*;
 import org.tpunn.autoblade.annotations.Strategy;
 import org.tpunn.autoblade.utilities.BindingUtils;
-import org.tpunn.autoblade.utilities.GeneratedPackageResolver;
 import org.tpunn.autoblade.utilities.InterfaceSelector;
 
 import javax.annotation.processing.*;
+import javax.lang.model.SourceVersion;
 import javax.lang.model.element.*;
 import javax.lang.model.type.TypeMirror;
 import java.io.IOException;
 import java.util.*;
 
+@SupportedSourceVersion(SourceVersion.RELEASE_17)
+@SupportedAnnotationTypes("org.tpunn.autoblade.annotations.Strategy")
 public class StrategyProcessor extends AbstractProcessor {
 
     private final Set<String> processed = new HashSet<>();
@@ -27,51 +29,52 @@ public class StrategyProcessor extends AbstractProcessor {
             if (processed.contains(annoName)) continue;
 
             ExecutableElement valueMethod = strategyAnno.getEnclosedElements().stream()
-                    .filter(e -> e != null && e.getSimpleName().contentEquals("value"))
+                    .filter(e -> e.getKind() == ElementKind.METHOD && e.getSimpleName().contentEquals("value"))
                     .map(e -> (ExecutableElement) e)
                     .findFirst().orElse(null);
 
             if (valueMethod == null) continue;
 
+            // Use JavaPoet's ClassName to handle the package automatically
+            ClassName strategyCn = ClassName.get(strategyAnno);
             TypeName enumType = TypeName.get(valueMethod.getReturnType());
-            String pkg = GeneratedPackageResolver.computeGeneratedPackage(Set.of(strategyAnno), processingEnv);
             
-            // 1. Generate @ActionStrategyKey
-            generateMapKey(pkg, annoName + "Key", enumType);
+            // 1. Generate @[Name]Key as a peer to the annotation
+            generateMapKey(strategyCn, annoName + "Key", enumType);
 
-            // 2. Generate ActionStrategyResolver
+            // 2. Generate [Name]Resolver as a peer to the annotation
             roundEnv.getElementsAnnotatedWith(strategyAnno).stream()
                     .filter(e -> e instanceof TypeElement)
                     .map(e -> (TypeElement) e)
                     .findFirst()
                     .ifPresent(te -> {
-                        TypeMirror iface = InterfaceSelector.selectBestInterface(te, processingEnv);
-                        if (iface != null) {
-                            generateResolver(te, pkg, annoName + "Resolver", enumType, TypeName.get(iface));
+                        TypeMirror ifaceMirror = InterfaceSelector.selectBestInterface(te, processingEnv);
+                        if (ifaceMirror != null) {
+                            generateResolver(te, strategyCn, annoName + "Resolver", enumType, ifaceMirror);
                         }
                     });
 
             processed.add(annoName);
         }
-        return false;
+        return true;
     }
 
-    private void generateResolver(TypeElement te, String pkg, String className, TypeName enumType, TypeName ifaceName) {
-        TypeName interfaceType = ifaceName;
+    private void generateResolver(TypeElement te, ClassName strategyCn, String className, TypeName enumType, TypeMirror ifaceMirror) {
+        String pkg = strategyCn.packageName();
+        TypeName interfaceType = TypeName.get(ifaceMirror);
+        
+        // Resolve Builder/Factory interfaces relative to the service element
         if (BindingUtils.hasMirror(te, "org.tpunn.autoblade.annotations.AutoBuilder")) {
-            // Load builder type
-            interfaceType = InterfaceSelector.selectBuilderInterface(pkg, InterfaceSelector.selectBestInterface(te, processingEnv), te, processingEnv);
+            interfaceType = InterfaceSelector.selectBuilderInterface(pkg, ifaceMirror, te, processingEnv);
         } else if (BindingUtils.hasMirror(te, "org.tpunn.autoblade.annotations.AutoFactory")) {
-            // Load factory type
-            interfaceType = InterfaceSelector.selectFactoryInterface(pkg, InterfaceSelector.selectBestInterface(te, processingEnv), te, processingEnv);
+            interfaceType = InterfaceSelector.selectFactoryInterface(pkg, ifaceMirror, te, processingEnv);
         }
+
         TypeName providerType = ParameterizedTypeName.get(ClassName.get("javax.inject", "Provider"), interfaceType);
         TypeName mapType = ParameterizedTypeName.get(ClassName.get("java.util", "Map"), enumType, providerType);
 
         TypeSpec resolver = TypeSpec.classBuilder(className)
                 .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
-                // FIX: Removed @Singleton. This allows the resolver to live 
-                // in the same component as the strategies (e.g. PlayerBlade).
                 .addField(mapType, "strategies", Modifier.PRIVATE, Modifier.FINAL)
                 .addMethod(MethodSpec.constructorBuilder()
                         .addAnnotation(ClassName.get("javax.inject", "Inject"))
@@ -93,18 +96,28 @@ public class StrategyProcessor extends AbstractProcessor {
         writeFile(pkg, resolver);
     }
 
-    private void generateMapKey(String pkg, String keyName, TypeName enumType) {
+    private void generateMapKey(ClassName strategyCn, String keyName, TypeName enumType) {
         TypeSpec keySpec = TypeSpec.annotationBuilder(keyName)
                 .addModifiers(Modifier.PUBLIC)
                 .addAnnotation(ClassName.get("dagger", "MapKey"))
-                .addAnnotation(AnnotationSpec.builder(java.lang.annotation.Retention.class)
-                        .addMember("value", "$T.RUNTIME", java.lang.annotation.RetentionPolicy.class).build())
-                .addMethod(MethodSpec.methodBuilder("value").addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT).returns(enumType).build())
+                .addAnnotation(AnnotationSpec.builder(ClassName.get("java.lang.annotation", "Retention"))
+                        .addMember("value", "$T.RUNTIME", ClassName.get("java.lang.annotation", "RetentionPolicy"))
+                        .build())
+                .addMethod(MethodSpec.methodBuilder("value")
+                        .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
+                        .returns(enumType)
+                        .build())
                 .build();
-        writeFile(pkg, keySpec);
+
+        writeFile(strategyCn.packageName(), keySpec);
     }
 
     private void writeFile(String pkg, TypeSpec typeSpec) {
-        try { JavaFile.builder(pkg, typeSpec).build().writeTo(processingEnv.getFiler()); } catch (IOException ignored) {}
+        try {
+            JavaFile.builder(pkg, typeSpec)
+                    .skipJavaLangImports(true)
+                    .build()
+                    .writeTo(processingEnv.getFiler());
+        } catch (IOException ignored) {}
     }
 }

@@ -1,25 +1,31 @@
 package org.tpunn.autoblade.processors;
 
 import com.squareup.javapoet.*;
-import org.tpunn.autoblade.annotations.*;
-import org.tpunn.autoblade.utilities.*;
-import javax.annotation.processing.*;
+import org.tpunn.autoblade.annotations.Repository;
+import org.tpunn.autoblade.utilities.BindingUtils;
+import org.tpunn.autoblade.utilities.FileCollector;
+import org.tpunn.autoblade.utilities.GeneratedPackageResolver;
+
+import javax.annotation.processing.AbstractProcessor;
+import javax.annotation.processing.RoundEnvironment;
+import javax.inject.Inject;
+import javax.inject.Provider;
+import javax.inject.Singleton;
 import javax.lang.model.element.*;
 import javax.lang.model.type.TypeMirror;
-import javax.tools.Diagnostic;
-import javax.tools.JavaFileObject;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-import javax.inject.Provider;
 
+/**
+ * Generates repository implementations with automatic caching.
+ * Uses Peer-Packaging and Nested Class imports to resolve Dagger classpath errors.
+ */
 public class RepositoryProcessor extends AbstractProcessor {
 
     private boolean registryGenerated = false;
     private Map<String, TypeElement> anchorToSeedMap = new HashMap<>();
 
-    /** Injected by AutoBladeProcessor to ensure cross-round persistence */
     public void setAnchorMap(Map<String, TypeElement> map) {
         this.anchorToSeedMap = map;
     }
@@ -32,11 +38,12 @@ public class RepositoryProcessor extends AbstractProcessor {
         if (repos.isEmpty()) return true;
 
         for (TypeElement repo : repos) {
-            String pkg = GeneratedPackageResolver.computeGeneratedPackage(Collections.singleton(repo), processingEnv);
+            // Generate Peer-to-Peer: lives in the same package as the interface
+            String pkg = GeneratedPackageResolver.getPackage(repo, processingEnv);
             
             if (!registryGenerated) {
-                generateBladeRegistry(pkg);
-                generateRepoOps(pkg);
+                generateBladeRegistry(pkg, repo);
+                generateRepoOps(pkg, repo);
                 registryGenerated = true;
             }
 
@@ -46,29 +53,28 @@ public class RepositoryProcessor extends AbstractProcessor {
     }
 
     private void generateRepoImpl(TypeElement repo, String pkg) {
-        if (repo.getKind() == ElementKind.CLASS && repo.getInterfaces().isEmpty()) {
-            processingEnv.getMessager().printMessage(
-                Diagnostic.Kind.ERROR,
-                "Repository class " + repo.getSimpleName() + " must implement an interface to be used as a contract.",
-                repo
-            );
-            return;
-        }
-
-        String implName = repo.getSimpleName() + "_Repo";
-        boolean isConcurrent = BindingUtils.hasAnnotation(repo, "org.tpunn.autoblade.annotations.Concurrent");
-        
-        ClassName registryType = ClassName.get(pkg, "BladeRegistry");
-        ClassName repoOps = ClassName.get(pkg, "RepoOps");
         String bladeBase = BindingUtils.parseBladeNameFromRepo(repo);
+        String implName = repo.getSimpleName() + "_Repo";
         
-        ClassName autoBladeType = ClassName.get(pkg, bladeBase + "Blade_Auto");
-        TypeName providerType = ParameterizedTypeName.get(ClassName.get(Provider.class), autoBladeType.nestedClass("Builder"));
+        // 1. Identify the Blade's package (Assumed to be project root or sibling)
+        // If the Blade is in 'org.tpunn.autoblade' and Repo is in 'org.tpunn.autoblade.repos'
+        // we need to find the correct root pkg.
+        String bladePkg = pkg.contains(".repos") ? pkg.substring(0, pkg.lastIndexOf(".repos")) : pkg;
+
+        // 2. Build the ClassName for the AutoBlade
+        ClassName autoBladeType = ClassName.get(bladePkg, bladeBase + "Blade_Auto");
+        
+        // 3. FIX: Use nestedClass to force an import of the outer class.
+        // This stops the "package PlayerBlade_Auto does not exist" error.
+        ClassName builderType = autoBladeType.nestedClass("Builder");
+        TypeName providerType = ParameterizedTypeName.get(ClassName.get(Provider.class), builderType);
 
         TypeSpec.Builder builder = TypeSpec.classBuilder(implName)
+                .addOriginatingElement(repo)
                 .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
-                .addAnnotation(ClassName.get("javax.inject", "Singleton"))
-                .addAnnotation(AnnotationSpec.builder(SuppressWarnings.class).addMember("value", "$S", "all").build());
+                .addAnnotation(Singleton.class)
+                .addAnnotation(AnnotationSpec.builder(SuppressWarnings.class)
+                        .addMember("value", "$S", "all").build());
 
         if (repo.getKind() == ElementKind.INTERFACE) {
             builder.addSuperinterface(TypeName.get(repo.asType()));
@@ -76,17 +82,22 @@ public class RepositoryProcessor extends AbstractProcessor {
             builder.superclass(TypeName.get(repo.asType()));
         }
 
+        ClassName registryType = ClassName.get(pkg, "BladeRegistry");
+        ClassName repoOps = ClassName.get(pkg, "RepoOps");
+
         builder.addField(registryType, "registry", Modifier.PRIVATE, Modifier.FINAL)
                .addField(providerType, "builderProvider", Modifier.PRIVATE, Modifier.FINAL);
 
         builder.addMethod(MethodSpec.constructorBuilder()
-                .addAnnotation(ClassName.get("javax.inject", "Inject"))
+                .addAnnotation(Inject.class)
                 .addParameter(registryType, "registry")
                 .addParameter(providerType, "builderProvider")
                 .addStatement("this.registry = registry")
                 .addStatement("this.builderProvider = builderProvider")
                 .build());
 
+        boolean isConcurrent = BindingUtils.hasAnnotation(repo, "org.tpunn.autoblade.annotations.Concurrent");
+        
         for (Element e : repo.getEnclosedElements()) {
             if (e == null || e.getKind() != ElementKind.METHOD) continue;
             ExecutableElement m = (ExecutableElement) e;
@@ -96,7 +107,7 @@ public class RepositoryProcessor extends AbstractProcessor {
             }
         }
 
-        writeFile(pkg, builder.build());
+        writeFile(repo, pkg, builder.build());
     }
 
     private void processMethod(TypeSpec.Builder builder, ExecutableElement m, String repoBladeBase, boolean isConcurrent, ClassName repoOps) {
@@ -150,7 +161,7 @@ public class RepositoryProcessor extends AbstractProcessor {
         builder.addMethod(mb.build());
     }
 
-    private void ensureCacheField(TypeSpec.Builder b, javax.lang.model.type.TypeMirror valType, TypeName idType, String blade, boolean concurrent) {
+    private void ensureCacheField(TypeSpec.Builder b, TypeMirror valType, TypeName idType, String blade, boolean concurrent) {
         String name = blade.toLowerCase() + "Cache";
         if (b.fieldSpecs.stream().anyMatch(f -> f.name.equals(name))) return;
         
@@ -163,23 +174,32 @@ public class RepositoryProcessor extends AbstractProcessor {
                 concurrent ? ClassName.get("java.util.concurrent", "ConcurrentHashMap") : ClassName.get("java.util", "HashMap")).build());
     }
 
-    private void writeFile(String pkg, TypeSpec spec) {
-        try { JavaFile.builder(pkg, spec).build().writeTo(processingEnv.getFiler()); } 
-        catch (IOException e) { processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "Write Failed: " + e.getMessage()); }
+    private void writeFile(Element origin, String pkg, TypeSpec spec) {
+        try {
+            JavaFile.builder(pkg, spec)
+                    .skipJavaLangImports(true)
+                    .build()
+                    .writeTo(processingEnv.getFiler());
+        } catch (IOException ignored) {}
     }
 
-    private void generateBladeRegistry(String targetPkg) { copyTemplate(targetPkg, "BladeRegistry"); }
-    private void generateRepoOps(String targetPkg) { copyTemplate(targetPkg, "RepoOps"); }
+    private void generateBladeRegistry(String targetPkg, Element origin) { copyTemplate(targetPkg, "BladeRegistry", origin); }
+    private void generateRepoOps(String targetPkg, Element origin) { copyTemplate(targetPkg, "RepoOps", origin); }
 
-    private void copyTemplate(String targetPkg, String fileName) {
+    private void copyTemplate(String targetPkg, String fileName, Element origin) {
         try {
-            var resourcePath = "/" + fileName + ".txt";
-            var is = getClass().getResourceAsStream(resourcePath);
+            var is = getClass().getResourceAsStream("/" + fileName + ".txt");
             if (is == null) return;
-            String content = new String(is.readAllBytes(), StandardCharsets.UTF_8);
-            content = content.replaceFirst("(?m)^package .*;\\s*", "package " + targetPkg + ";\n\n");
-            JavaFileObject file = processingEnv.getFiler().createSourceFile(targetPkg + "." + fileName);
-            try (var writer = file.openWriter()) { writer.write(content); }
+            String rawContent = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+            
+            // Clean package declaration from template and apply targetPkg
+            String cleanContent = rawContent.replaceFirst("(?m)^package .*;\\s*", "");
+            String finalContent = "package " + targetPkg + ";\n\n" + cleanContent;
+            
+            var file = processingEnv.getFiler().createSourceFile(targetPkg + "." + fileName, origin);
+            try (var writer = file.openWriter()) {
+                writer.write(finalContent);
+            }
         } catch (IOException ignored) {}
     }
 }

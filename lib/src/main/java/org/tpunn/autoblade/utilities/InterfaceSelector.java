@@ -1,12 +1,11 @@
 package org.tpunn.autoblade.utilities;
 
 import org.tpunn.autoblade.annotations.Interface;
-
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.TypeName;
-
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.*;
+import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
 import java.util.ArrayList;
 import java.util.List;
@@ -23,7 +22,6 @@ public final class InterfaceSelector {
         for (TypeMirror m : impl.getInterfaces()) {
             if (m == null) continue;
             String s = m.toString();
-            // Skip common JDK interfaces and defensive: don't consider the implementation type itself
             if (s.startsWith("java.lang") || s.startsWith("java.io") || s.equals(implType)) continue;
             ifaces.add(m);
         }
@@ -32,13 +30,11 @@ public final class InterfaceSelector {
 
         String implName = impl.getSimpleName().toString();
 
-        // 0) explicit annotation: prefer interfaces annotated with @Interface
         for (TypeMirror m : ifaces) {
-            TypeElement mElem = (TypeElement) ((javax.lang.model.type.DeclaredType) m).asElement();
+            TypeElement mElem = (TypeElement) ((DeclaredType) m).asElement();
             if (mElem.getAnnotation(Interface.class) != null) return m;
         }
 
-        // 1) suffix match
         for (TypeMirror m : ifaces) {
             String iname = simpleNameOf(m);
             if (implName.endsWith(iname) || implName.endsWith(iname + "Impl") || implName.endsWith(iname + "Implementation")) {
@@ -46,29 +42,25 @@ public final class InterfaceSelector {
             }
         }
 
-        // 2) stripped name match
         String base = stripImplSuffix(implName);
         for (TypeMirror m : ifaces) {
             if (simpleNameOf(m).equals(base)) return m;
         }
 
-        // 3) same package
         String implPkg = env.getElementUtils().getPackageOf(impl).getQualifiedName().toString();
         for (TypeMirror m : ifaces) {
-            TypeElement mElem = (TypeElement) ((javax.lang.model.type.DeclaredType) m).asElement();
+            TypeElement mElem = (TypeElement) ((DeclaredType) m).asElement();
             String mpkg = env.getElementUtils().getPackageOf(mElem).getQualifiedName().toString();
             if (mpkg.equals(implPkg)) return m;
         }
 
-        // 4) fewest methods
         TypeMirror best = null;
         int bestCount = Integer.MAX_VALUE;
         for (TypeMirror m : ifaces) {
-            TypeElement mElem = (TypeElement) ((javax.lang.model.type.DeclaredType) m).asElement();
+            TypeElement mElem = (TypeElement) ((DeclaredType) m).asElement();
             int count = 0;
             for (Element e : mElem.getEnclosedElements()) {
-                if (e == null) continue;
-                if (e.getKind() == ElementKind.METHOD) count++;
+                if (e != null && e.getKind() == ElementKind.METHOD) count++;
             }
             if (count < bestCount) {
                 bestCount = count;
@@ -79,7 +71,7 @@ public final class InterfaceSelector {
     }
 
     private static String simpleNameOf(TypeMirror m) {
-        return ((TypeElement) ((javax.lang.model.type.DeclaredType) m).asElement()).getSimpleName().toString();
+        return ((TypeElement) ((DeclaredType) m).asElement()).getSimpleName().toString();
     }
 
     private static String stripImplSuffix(String name) {
@@ -90,31 +82,27 @@ public final class InterfaceSelector {
         return s;
     }
 
+    // FIX: Updated to convert TypeMirror to TypeElement for FactoryNaming
     public static TypeName selectBuilderInterface(String pkg, TypeMirror iface, TypeElement impl, ProcessingEnvironment env) {
-        // For builders, resolve the builder name
-        String builderInterfaceName = FactoryNaming.resolveName(iface, impl, env, "?", "Builder");
-        if (builderInterfaceName == null) return null;
-        return ClassName.get(pkg, builderInterfaceName);
+        TypeElement ifaceElem = (TypeElement) env.getTypeUtils().asElement(iface);
+        String name = FactoryNaming.resolveName(ifaceElem, env, "?", "Builder");
+        return name == null ? null : ClassName.get(pkg, name);
     }
 
     public static TypeName selectBuilderImpl(String pkg, TypeElement impl, ProcessingEnvironment env) {
-        // For builders, resolve the builder name
-        String builderInterfaceName = FactoryNaming.resolveName(impl.asType(), impl, env, "org.tpunn.autoblade.annotations.AutoBuilder", "Builder");
-        if (builderInterfaceName == null) return null;
-        return ClassName.get(pkg, builderInterfaceName);
+        String name = FactoryNaming.resolveName(impl, env, "org.tpunn.autoblade.annotations.AutoBuilder", "Builder");
+        return name == null ? null : ClassName.get(pkg, name);
     }
 
+    // FIX: Updated to convert TypeMirror to TypeElement for FactoryNaming
     public static TypeName selectFactoryInterface(String pkg, TypeMirror iface, TypeElement impl, ProcessingEnvironment env) {
-        // For factories, resolve the factory name
-        String factoryInterfaceName = FactoryNaming.resolveName(iface, impl, env, "?", "Factory");
-        if (factoryInterfaceName == null) return null;
-        return ClassName.get(pkg, factoryInterfaceName);
+        TypeElement ifaceElem = (TypeElement) env.getTypeUtils().asElement(iface);
+        String name = FactoryNaming.resolveName(ifaceElem, env, "?", "Factory");
+        return name == null ? null : ClassName.get(pkg, name);
     }
 
     public static TypeName selectFactoryImpl(String pkg, TypeElement impl, ProcessingEnvironment env) {
-        // For builders, resolve the builder name
-        String builderInterfaceName = FactoryNaming.resolveName(impl.asType(), impl, env, "org.tpunn.autoblade.annotations.AutoFactory", "Factory");
-        if (builderInterfaceName == null) return null;
-        return ClassName.get(pkg, builderInterfaceName);
+        String name = FactoryNaming.resolveName(impl, env, "org.tpunn.autoblade.annotations.AutoFactory", "Factory");
+        return name == null ? null : ClassName.get(pkg, name);
     }
 }
