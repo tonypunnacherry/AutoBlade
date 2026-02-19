@@ -5,12 +5,13 @@ import org.tpunn.autoblade.annotations.Repository;
 import org.tpunn.autoblade.utilities.BindingUtils;
 import org.tpunn.autoblade.utilities.FileCollector;
 import org.tpunn.autoblade.utilities.GeneratedPackageResolver;
+import org.tpunn.autoblade.utilities.LocationResolver;
+import org.tpunn.autoblade.utilities.NamingUtils;
 
 import javax.annotation.processing.AbstractProcessor;
 import javax.annotation.processing.RoundEnvironment;
 import javax.inject.Inject;
 import javax.inject.Provider;
-import javax.inject.Singleton;
 import javax.lang.model.element.*;
 import javax.lang.model.type.TypeMirror;
 import java.io.IOException;
@@ -69,10 +70,22 @@ public class RepositoryProcessor extends AbstractProcessor {
         ClassName builderType = autoBladeType.nestedClass("Builder");
         TypeName providerType = ParameterizedTypeName.get(ClassName.get(Provider.class), builderType);
 
+        String anchor = LocationResolver.resolveLocation(repo);
+        AnnotationSpec scopeAnnotation;
+        if ("App".equalsIgnoreCase(anchor)) {
+            // Root level always uses Singleton
+            scopeAnnotation = AnnotationSpec.builder(ClassName.get("javax.inject", "Singleton")).build();
+        } else {
+            // Anchored repos MUST use the specific anchor scope to prevent Root-level instantiation
+            String scopeName = "Auto" + NamingUtils.toPascalCase(anchor) + "Anchor";
+            // Usually, the scope is generated in the same package as the Blade_Auto
+            scopeAnnotation = AnnotationSpec.builder(ClassName.get(bladePkg, scopeName)).build();
+        }
+
         TypeSpec.Builder builder = TypeSpec.classBuilder(implName)
                 .addOriginatingElement(repo)
                 .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
-                .addAnnotation(Singleton.class)
+                .addAnnotation(scopeAnnotation)
                 .addAnnotation(AnnotationSpec.builder(SuppressWarnings.class)
                         .addMember("value", "$S", "all").build());
 

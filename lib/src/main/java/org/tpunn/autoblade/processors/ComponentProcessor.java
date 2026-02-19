@@ -20,6 +20,7 @@ public class ComponentProcessor extends AbstractProcessor {
 
         Set<TypeElement> allSeeds = FileCollector.collectManaged(roundEnv, Seed.class);
         Set<TypeElement> allContracts = FileCollector.collectManaged(roundEnv, Blade.class);
+        Set<TypeElement> allRepos = FileCollector.collectManaged(roundEnv, Repository.class);
         if (allContracts.isEmpty()) return true;
 
         // Group contracts by their anchor location
@@ -27,8 +28,10 @@ public class ComponentProcessor extends AbstractProcessor {
                 .collect(Collectors.toMap(LocationResolver::resolveLocation, c -> c, (a, b) -> a));
 
         Map<String, List<TypeElement>> seedsByLoc = LocationResolver.groupByAnchor(allSeeds);
+        Map<String, List<TypeElement>> reposByLoc = LocationResolver.groupByAnchor(allRepos);
         
         Set<String> allLocs = new HashSet<>(seedsByLoc.keySet());
+        allLocs.add("App");
         allLocs.addAll(contractByLoc.keySet());
 
         // Use the App Blade's package for the root component, fallback to common root
@@ -36,39 +39,77 @@ public class ComponentProcessor extends AbstractProcessor {
         String rootPkg = rootContract != null 
             ? GeneratedPackageResolver.getPackage(rootContract, processingEnv)
             : GeneratedPackageResolver.computeGeneratedPackage(allContracts, processingEnv);
-
+        
         for (String loc : allLocs) {
-            if ("App".equalsIgnoreCase(loc)) continue;
-            generateSubcomponent(rootPkg, loc, seedsByLoc.getOrDefault(loc, List.of()), contractByLoc.get(loc));
+            List<TypeElement> anchorRepos = reposByLoc.getOrDefault(loc, Collections.emptyList());
+            List<TypeElement> anchorSeeds = seedsByLoc.getOrDefault(loc, Collections.emptyList());
+
+            generateBlade(
+                rootPkg, 
+                loc, 
+                anchorSeeds, 
+                contractByLoc.get(loc), 
+                anchorRepos, 
+                contractByLoc
+            );
         }
 
-        generateAppBladeAuto(rootPkg, allLocs, rootContract, contractByLoc);
         return true;
     }
 
-    private void generateSubcomponent(String rootPkg, String loc, List<TypeElement> seeds, TypeElement contract) {
-        // Find the specific package for this Blade contract
+    private void generateBlade(String rootPkg, String loc, List<TypeElement> seeds, TypeElement contract, List<TypeElement> reposForThisAnchor, Map<String, TypeElement> contractByLoc) {
+        boolean isApp = "App".equalsIgnoreCase(loc);
         String pkg = contract != null ? GeneratedPackageResolver.getPackage(contract, processingEnv) : rootPkg;
-        ClassName compName = ClassName.get(pkg, loc + "Blade_Auto");
+        
+        ClassName compName = ClassName.get(pkg, loc + (isApp ? "Blade_Auto" : "Blade_Auto"));
         ClassName autoModule = ClassName.get(rootPkg, loc + "AutoModule");
-        ClassName anchorScope = ClassName.get(pkg, "Auto" + NamingUtils.toPascalCase(loc) + "Anchor");
 
-        TypeSpec.Builder comp = TypeSpec.interfaceBuilder(compName)
-                .addModifiers(Modifier.PUBLIC)
-                .addAnnotation(anchorScope)
-                .addAnnotation(buildDaggerAnnotation("Subcomponent", autoModule, contract))
-                .addSuperinterface(contract != null ? TypeName.get(contract.asType()) : ClassName.get(pkg, loc + "Blade"));
+        // 1. Initialize Component/Subcomponent
+        TypeSpec.Builder comp = TypeSpec.interfaceBuilder(compName).addModifiers(Modifier.PUBLIC);
+        
+        if (isApp) {
+            comp.addAnnotation(ClassName.get("javax.inject", "Singleton"))
+                .addAnnotation(buildDaggerAnnotation("Component", autoModule, contract));
+        } else {
+            comp.addAnnotation(ClassName.get(pkg, "Auto" + NamingUtils.toPascalCase(loc) + "Anchor"))
+                .addAnnotation(buildDaggerAnnotation("Subcomponent", autoModule, contract));
+        }
 
+        if (contract != null) comp.addSuperinterface(TypeName.get(contract.asType()));
+
+        // 2. Add Builders for CHILDREN (Sourced by this anchor's repos)
+        for (TypeElement repo : reposForThisAnchor) {
+            Source source = repo.getAnnotation(Source.class);
+            if (source != null && !source.value().equalsIgnoreCase(loc)) {
+                String childLoc = source.value();
+                TypeElement childContract = contractByLoc.get(childLoc);
+                String childPkg = childContract != null ? GeneratedPackageResolver.getPackage(childContract, processingEnv) : rootPkg;
+                
+                comp.addMethod(MethodSpec.methodBuilder("get" + NamingUtils.toPascalCase(childLoc) + "Builder")
+                        .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
+                        .returns(ClassName.get(childPkg, childLoc + "Blade_Auto", "Builder"))
+                        .build());
+            }
+        }
+
+        // 3. Nested Builder/Factory Interface
+        String builderKind = isApp ? "Component" : "Subcomponent";
         TypeSpec.Builder builder = TypeSpec.interfaceBuilder("Builder")
                 .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.ABSTRACT)
-                .addAnnotation(ClassName.get("dagger", "Subcomponent", "Builder"));
+                .addAnnotation(ClassName.get("dagger", builderKind, "Builder"));
 
+        // Add Seed support
         if (!seeds.isEmpty()) {
             builder.addMethod(MethodSpec.methodBuilder("seed")
                     .addAnnotation(ClassName.get("dagger", "BindsInstance"))
                     .addParameter(TypeName.get(seeds.get(0).asType()), "data")
                     .returns(compName.nestedClass("Builder"))
                     .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
+                    .build());
+
+            comp.addMethod(MethodSpec.methodBuilder("data")
+                    .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
+                    .returns(TypeName.get(seeds.get(0).asType()))
                     .build());
         }
 
@@ -78,34 +119,8 @@ public class ComponentProcessor extends AbstractProcessor {
                 .build()).build());
 
         writeFile(pkg, comp.build());
-    }
-
-    private void generateAppBladeAuto(String pkg, Set<String> allLocs, TypeElement root, Map<String, TypeElement> contractByLoc) {
-        ClassName autoRootModule = ClassName.get(pkg, "AppAutoModule");
-        ClassName appBladeAuto = ClassName.get(pkg, "AppBlade_Auto");
         
-        TypeSpec.Builder app = TypeSpec.interfaceBuilder(appBladeAuto)
-                .addModifiers(Modifier.PUBLIC)
-                .addAnnotation(ClassName.get("javax.inject", "Singleton"))
-                .addAnnotation(buildDaggerAnnotation("Component", autoRootModule, root));
-
-        if (root != null) app.addSuperinterface(TypeName.get(root.asType()));
-
-        for (String loc : allLocs) {
-            if ("App".equalsIgnoreCase(loc)) continue;
-            
-            TypeElement subContract = contractByLoc.get(loc);
-            String subPkg = subContract != null ? GeneratedPackageResolver.getPackage(subContract, processingEnv) : pkg;
-            
-            app.addMethod(MethodSpec.methodBuilder("get" + NamingUtils.toPascalCase(loc) + "Builder")
-                    .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
-                    .returns(ClassName.get(subPkg, loc + "Blade_Auto", "Builder"))
-                    .build());
-        }
-
-        TypeSpec spec = app.build();
-        writeFile(pkg, spec);
-        generateAppWrapper(pkg, appBladeAuto, root);
+        if (isApp) generateAppWrapper(pkg, compName, contract);
     }
 
     private void generateAppWrapper(String pkg, ClassName componentCn, TypeElement rootContract) {

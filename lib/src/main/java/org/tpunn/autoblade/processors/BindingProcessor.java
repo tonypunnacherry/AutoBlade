@@ -9,8 +9,10 @@ import javax.lang.model.element.*;
 import javax.lang.model.type.TypeMirror;
 import java.io.IOException;
 import java.util.*;
-import java.util.stream.Collectors;
 
+/**
+ * This processor builds the Dagger modules for every Blade
+ */
 @SupportedSourceVersion(SourceVersion.RELEASE_17)
 public class BindingProcessor extends AbstractProcessor {
 
@@ -46,13 +48,15 @@ public class BindingProcessor extends AbstractProcessor {
         return true;
     }
 
+    // Generates a module for a given anchor using the collected services, repositories, and contracts
     private void generateModule(String anchor, List<TypeElement> svcs, List<TypeElement> repos, Set<TypeElement> contracts) {
+        // Identify the associated Blade contract for this anchor
         TypeElement owner = contracts.stream()
                 .filter(c -> anchor.equalsIgnoreCase(LocationResolver.resolveLocation(c)))
                 .findFirst()
                 .orElse(null);
 
-        // Root/App logic
+        // Identify the package for the generated module
         String pkg = (owner != null) 
                 ? GeneratedPackageResolver.getPackage(owner, processingEnv)
                 : GeneratedPackageResolver.computeGeneratedPackage(contracts, processingEnv);
@@ -60,28 +64,29 @@ public class BindingProcessor extends AbstractProcessor {
         // Ensure pkg isn't empty to avoid default package issues
         if (pkg == null || pkg.isEmpty()) pkg = "org.tpunn.autoblade";
 
+        // Start buiding the module file
         ClassName moduleCn = ClassName.get(pkg, anchor + "AutoModule");
         TypeSpec.Builder modBuilder = TypeSpec.interfaceBuilder(moduleCn)
-                .addModifiers(Modifier.PUBLIC)
-                .addAnnotation(ClassName.get("dagger", "Module"));
+                .addModifiers(Modifier.PUBLIC);
 
-        // 3. Subcomponents (Only for App Module)
-        if ("App".equalsIgnoreCase(anchor)) {
-            List<ClassName> subTypes = contracts.stream()
-                .filter(c -> !"App".equalsIgnoreCase(LocationResolver.resolveLocation(c)))
-                .map(c -> ClassName.get(c).peerClass(LocationResolver.resolveLocation(c) + "Blade_Auto"))
-                .collect(Collectors.toList());
-            
-            if (!subTypes.isEmpty()) {
-                CodeBlock subList = subTypes.stream()
-                    .map(type -> CodeBlock.of("$T.class", type))
-                    .collect(CodeBlock.joining(", ", "{", "}"));
-                moduleAnno(modBuilder).addMember("subcomponents", subList);
-            }
-        }
+        List<ClassName> subcomponents = new ArrayList<>();
 
         // 4. Repository Bindings
         for (TypeElement repo : repos) {
+            // Safely grab the @Source annotation
+            Source sourceAnno = repo.getAnnotation(Source.class);
+            if (sourceAnno != null) {
+                String targetAnchor = sourceAnno.value();
+                if (!targetAnchor.equalsIgnoreCase(anchor)) {
+                    ClassName subComponentCn = ClassName.get(pkg, targetAnchor + "Blade_Auto");
+                    if (!subcomponents.contains(subComponentCn)) {
+                        subcomponents.add(subComponentCn);
+                    }
+                }
+            } else {
+                throw new IllegalStateException("Repository " + repo.getQualifiedName() + " is missing @Source annotation");
+            }
+
             // Find the interface (e.g., TeamRepository)
             TypeName ifaceType = TypeName.get(repo.asType());
             if (repo.getKind() == ElementKind.CLASS && !repo.getInterfaces().isEmpty()) {
@@ -91,6 +96,17 @@ public class BindingProcessor extends AbstractProcessor {
             ClassName impl = ClassName.get(repo).peerClass(repo.getSimpleName() + "_Repo");
             generateBinding(modBuilder, repo, ifaceType, impl, "Repo", Optional.empty(), owner);
         }
+            
+        var moduleAnno = moduleAnno(modBuilder);
+        if (!subcomponents.isEmpty()) {
+            CodeBlock subList = subcomponents.stream()
+                .map(type -> CodeBlock.of("$T.class", type))
+                .collect(CodeBlock.joining(", ", "{", "}"));
+            moduleAnno.addMember("subcomponents", subList);
+        }
+
+        // Finally, add the fully formed annotation to the class
+        modBuilder.addAnnotation(moduleAnno.build());
 
         // 5. Services
         for (TypeElement te : svcs) {

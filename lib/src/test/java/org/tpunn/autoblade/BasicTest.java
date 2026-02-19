@@ -81,6 +81,6 @@ public class BasicTest {
         assertEquals("Sitting for Tony! Sitting: false", lastLine);
 
         player.messages().resolve(MessageType.EMAIL).create("Hello Tony!").send();
-        assertEquals("Sending email... Hello Tony!", lastLine);
+        assertEquals("Sending email... Hello Tony! to Tony of team Cool Team", lastLine);
     }
 }

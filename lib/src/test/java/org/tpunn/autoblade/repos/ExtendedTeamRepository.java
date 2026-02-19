@@ -10,9 +10,12 @@ import org.tpunn.autoblade.annotations.Concurrent;
 import org.tpunn.autoblade.annotations.Create;
 import org.tpunn.autoblade.annotations.Lookup;
 import org.tpunn.autoblade.annotations.Repository;
+import org.tpunn.autoblade.annotations.Source;
+import org.tpunn.autoblade.core.Anchor;
 
 @Repository
 @Concurrent
+@Source(Anchor.TEAM)
 public abstract class ExtendedTeamRepository implements TeamRepository {
     @Create
     public abstract TeamBlade create(TeamData team);

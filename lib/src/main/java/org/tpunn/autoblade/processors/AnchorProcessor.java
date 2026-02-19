@@ -8,12 +8,16 @@ import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
+import javax.tools.Diagnostic;
+
 import java.io.IOException;
 import java.util.*;
 
+/**
+ * This annotation processor generates Dagger scopes for every Blade
+ */
 @SupportedSourceVersion(SourceVersion.RELEASE_17)
 public class AnchorProcessor extends AbstractProcessor {
-
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
         if (roundEnv.processingOver()) return false;
@@ -39,10 +43,8 @@ public class AnchorProcessor extends AbstractProcessor {
 
             // If no Blade is found, fallback to the first service requesting it
             if (owner == null) {
-                owner = anchoredServices.stream()
-                    .filter(s -> key.equalsIgnoreCase(LocationResolver.resolveLocation(s)))
-                    .findFirst()
-                    .orElse(null);
+                this.processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "No @Blade found for anchor '" + key + "'.");
+                return false;
             }
 
             if (owner != null) {
