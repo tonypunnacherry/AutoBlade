@@ -22,3 +22,5 @@ AutoBlade is intended to be a full framework consisting of the following content
 * Blade Connect - a library that provides tooling to optimize your Blade builds/JARs as well as integration with your cloud project and/or APIs/microservices.
 
 At the moment, Blade Core has completed development and is in the process of refactoring to minimize bugs and maximize code quality. The repository feature is partially developed for Blade State. The remaining items are in planning or unstarted.
+
+Also in the process of ensuring Kotlin compatibility for Blade Core.
