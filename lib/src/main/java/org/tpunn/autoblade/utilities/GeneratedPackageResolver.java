@@ -1,6 +1,9 @@
 package org.tpunn.autoblade.utilities;
 
 import javax.annotation.processing.ProcessingEnvironment;
+import javax.lang.model.element.Element;
+import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.PackageElement;
 import javax.lang.model.element.TypeElement;
 import java.util.*;
 
@@ -48,6 +51,21 @@ public final class GeneratedPackageResolver {
      * Useful for Dagger-native "origin-based" generation.
      */
     public static String getPackage(TypeElement element, ProcessingEnvironment env) {
-        return env.getElementUtils().getPackageOf(element).getQualifiedName().toString();
+        // 1. Primary: Use the standard Utils (Fast)
+        PackageElement pkg = env.getElementUtils().getPackageOf(element);
+        
+        // 2. Backup: If Kapt returns a blank/unnamed package for a named Kotlin class,
+        // manually traverse the hierarchy (The Dagger way).
+        if (pkg == null || pkg.isUnnamed()) {
+            Element enclosing = element;
+            while (enclosing != null && enclosing.getKind() != ElementKind.PACKAGE) {
+                enclosing = enclosing.getEnclosingElement();
+            }
+            if (enclosing instanceof PackageElement fallbackPkg) {
+                return fallbackPkg.getQualifiedName().toString();
+            }
+        }
+
+        return pkg != null ? pkg.getQualifiedName().toString() : "";
     }
 }

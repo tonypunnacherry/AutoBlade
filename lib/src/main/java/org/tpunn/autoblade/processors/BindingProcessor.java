@@ -60,9 +60,13 @@ public class BindingProcessor extends AbstractProcessor {
         String pkg = (owner != null) 
                 ? GeneratedPackageResolver.getPackage(owner, processingEnv)
                 : GeneratedPackageResolver.computeGeneratedPackage(contracts, processingEnv);
+
+        System.out.println("Generating module for anchor: " + anchor + " in package: " + pkg);
         
-        // Ensure pkg isn't empty to avoid default package issues
-        if (pkg == null || pkg.isEmpty()) pkg = "org.tpunn.autoblade";
+        // Ignore processing invalid files
+        if (pkg == null || pkg.isEmpty()) {
+            return;
+        }
 
         // Start buiding the module file
         ClassName moduleCn = ClassName.get(pkg, anchor + "AutoModule");
@@ -142,7 +146,10 @@ public class BindingProcessor extends AbstractProcessor {
             JavaFile.builder(pkg, modBuilder.build()).skipJavaLangImports(true).build().writeTo(processingEnv.getFiler());
         } catch (FilerException ignored) {
             // This prevents duplicate file creation errors across rounds
-        } catch (IOException ignored) {}
+            System.out.println("Duplicate module detected");
+        } catch (IOException ignored) {
+            System.out.println("IO failed to generate module");
+        }
     }
 
     private void generateBinding(TypeSpec.Builder mod, TypeElement origin, TypeName iface, TypeName impl, 

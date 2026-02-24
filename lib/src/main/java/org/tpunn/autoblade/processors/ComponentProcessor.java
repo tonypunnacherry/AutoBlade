@@ -59,7 +59,14 @@ public class ComponentProcessor extends AbstractProcessor {
 
     private void generateBlade(String rootPkg, String loc, List<TypeElement> seeds, TypeElement contract, List<TypeElement> reposForThisAnchor, Map<String, TypeElement> contractByLoc) {
         boolean isApp = "App".equalsIgnoreCase(loc);
-        String pkg = contract != null ? GeneratedPackageResolver.getPackage(contract, processingEnv) : rootPkg;
+        
+        String pkg;
+        if (contract != null) {
+            // Use Elements utility to get the real package of the Kotlin/Java interface
+            pkg = processingEnv.getElementUtils().getPackageOf(contract).getQualifiedName().toString();
+        } else {
+            pkg = rootPkg;
+        }
         
         ClassName compName = ClassName.get(pkg, loc + (isApp ? "Blade_Auto" : "Blade_Auto"));
         ClassName autoModule = ClassName.get(rootPkg, loc + "AutoModule");
@@ -153,7 +160,7 @@ public class ComponentProcessor extends AbstractProcessor {
         return element.getAnnotationMirrors().stream()
             .filter(m -> m.getAnnotationType().toString().equals(Blade.class.getName()))
             .flatMap(m -> m.getElementValues().entrySet().stream())
-            .filter(e -> e.getKey().getSimpleName().contentEquals("legacy"))
+            .filter(e -> e.getKey().getSimpleName().contentEquals("modules"))
             .flatMap(e -> ((List<?>) e.getValue().getValue()).stream())
             .map(v -> TypeName.get((TypeMirror) ((AnnotationValue) v).getValue()))
             .collect(Collectors.toList());
@@ -162,7 +169,9 @@ public class ComponentProcessor extends AbstractProcessor {
     private void writeFile(String pkg, TypeSpec spec) {
         try {
             JavaFile.builder(pkg, spec).skipJavaLangImports(true).build().writeTo(processingEnv.getFiler());
-        } catch (IOException ignored) {}
+        } catch (IOException ignored) {
+            System.out.println("Failed to generate component.");
+        }
     }
 
     @Override

@@ -1,69 +1,129 @@
 plugins {
     `java-library`
-    idea // Required for IntelliJ to recognize generated test sources
+    idea
+    kotlin("jvm") version "2.1.0"
+    kotlin("kapt") version "2.1.0"
 }
 
 group = "org.tpunn.autoblade"
 version = "1.0.0"
 
 java {
-    toolchain {
-        languageVersion.set(JavaLanguageVersion.of(21))
-    }
+    toolchain { languageVersion.set(JavaLanguageVersion.of(21)) }
+}
+
+// 1. SourceSet for VS Code visibility
+val kotlinIntTestSourceSet = sourceSets.create("kotlinIntegrationTest") {
+    kotlin.setSrcDirs(listOf("src/test/kotlin"))
+    java.setSrcDirs(listOf("src/test/kotlin"))
+
+    compileClasspath += sourceSets.main.get().output + configurations.testRuntimeClasspath.get()
+    runtimeClasspath += output + compileClasspath
 }
 
 repositories {
     mavenCentral()
 }
 
-dependencies {
-    // 1. Dagger API: Consumers need this to compile @Inject and @Component
-    api("com.google.dagger:dagger:2.59")
+// 2. Configuration Inheritance & Wiring
+configurations {
+    named("kotlinIntegrationTestImplementation") {
+        extendsFrom(testImplementation.get())
+    }
+    named("kotlinIntegrationTestRuntimeOnly") {
+        extendsFrom(testRuntimeOnly.get())
+    }
+    named("kaptKotlinIntegrationTest") {
+        extendsFrom(configurations.kapt.get())
+    }
+}
 
-    // 2. Annotation Processing Tools
+dependencies {
+    // Core Dependencies
+    api("com.google.dagger:dagger:2.59")
     compileOnly("com.google.auto.service:auto-service-annotations:1.1.1")
     annotationProcessor("com.google.auto.service:auto-service:1.1.1")
-
-    // 3. Code Generation
     implementation("com.squareup:javapoet:1.13.0")
 
-    // --- INTEGRATION TEST SETUP ---
-    // Use the JAR output of this project as a dependency for its own tests
     val processorJar = tasks.jar.flatMap { it.archiveFile }
 
+    // --- JAVA INTEGRATION TESTS ---
     testImplementation(files(processorJar))
     testAnnotationProcessor(files(processorJar))
-
-    // Dagger compiler must run AFTER your processor to see the generated Modules
     testAnnotationProcessor("com.google.dagger:dagger-compiler:2.59")
-
     testImplementation("junit:junit:4.13.2")
     testImplementation("com.google.testing.compile:compile-testing:0.21.0")
+
+    // --- KOTLIN INTEGRATION TESTS ---
+    "kaptKotlinIntegrationTest"(files(processorJar))
+    "kaptKotlinIntegrationTest"("com.google.dagger:dagger-compiler:2.59")
+    
+    "kotlinIntegrationTestImplementation"(kotlin("stdlib"))
+    "kotlinIntegrationTestImplementation"("org.jetbrains.kotlin:kotlin-test")
+    "kotlinIntegrationTestImplementation"("com.google.dagger:dagger:2.59")
+    "kotlinIntegrationTestImplementation"("junit:junit:4.13.2")
+    "kotlinIntegrationTestImplementation"(files(processorJar))
+}
+
+sourceSets {
+    getByName("test") {
+        kotlin.exclude("**/autobladekt/**")
+    }
+}
+
+kapt {
+    keepJavacAnnotationProcessors = true
+    correctErrorTypes = true 
+}
+
+// 3. Define the Test Task
+val kotlinIntegrationTestTask = tasks.register<Test>("kotlinIntegrationTest") {
+    description = "Runs Kotlin integration tests."
+    group = "verification"
+    testClassesDirs = kotlinIntTestSourceSet.output.classesDirs
+    classpath = kotlinIntTestSourceSet.runtimeClasspath
+    
+    shouldRunAfter(tasks.test)
+}
+
+// 4. Task Wiring
+tasks.test {
+    dependsOn(kotlinIntegrationTestTask)
+}
+
+// Ensure the JAR is built before the integration tests try to compile
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    if (name.contains("IntegrationTest")) {
+        dependsOn(tasks.jar)
+    }
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
+    }
 }
 
 tasks.withType<JavaCompile> {
-    options.release.set(17)
-    options.compilerArgs.addAll(listOf("-Xlint:unchecked", "-Xlint:deprecation"))
-
-    // FIX: Ensure the JAR is actually built before the test compilation tries to use it
-    if (name.contains("Test")) {
-        dependsOn(tasks.jar)
-    }
+    options.release.set(21)
 }
 
 tasks.jar {
-    manifest {
-        attributes(
-            "Implementation-Title" to "AutoBlade",
-            "Implementation-Version" to project.version
-        )
-    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
+
+tasks.check { dependsOn(kotlinIntegrationTestTask) }
 
 tasks.withType<Test> {
     testLogging {
         showStandardStreams = true
-        // Optional: show when tests pass/fail
         events("passed", "skipped", "failed")
+    }
+}
+
+// 5. IDE Support (Helper for VS Code Classpath Resolver)
+idea {
+    module {
+        val kaptGeneratedDir = layout.buildDirectory.dir("generated/source/kapt/kotlinIntegrationTest").get().asFile
+        testSources.from(kotlinIntTestSourceSet.kotlin.srcDirs)
+        generatedSourceDirs.add(kaptGeneratedDir)
+        testSources.from(kaptGeneratedDir)
     }
 }

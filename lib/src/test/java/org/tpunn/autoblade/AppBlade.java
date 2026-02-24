@@ -5,7 +5,7 @@ import org.tpunn.autoblade.legacy.LegacyClient;
 import org.tpunn.autoblade.legacy.LegacyModule;
 import org.tpunn.autoblade.repos.TeamRepository;
 
-@Blade(legacy = {LegacyModule.class})
+@Blade(modules = {LegacyModule.class})
 public interface AppBlade {
     TeamRepository teams();
     LegacyClient legacy();
