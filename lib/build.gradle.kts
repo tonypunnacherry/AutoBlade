@@ -118,6 +118,20 @@ tasks.withType<Test> {
     }
 }
 
+kotlin {
+    sourceSets {
+        named("kotlinIntegrationTest") {
+            // This forces the LS to see the Kapt output as a source root
+            kotlin.srcDir(layout.buildDirectory.dir("generated/source/kapt/kotlinIntegrationTest"))
+        }
+    }
+}
+
+sourceSets.test {
+    compileClasspath += kotlinIntTestSourceSet.output
+    runtimeClasspath += kotlinIntTestSourceSet.output
+}
+
 // 5. IDE Support (Helper for VS Code Classpath Resolver)
 idea {
     module {
